@@ -54,6 +54,7 @@ To recover retired data, read its receipt and move the indicated bundle to a sep
 - Symlinked/unowned state, inode replacement, corrupt records, failed measurements, cross-volume retirement and unavailable liveness evidence refuse unsafe operations.
 - Normal completion, command failure and interruption stop the managed group before retirement. Killing the outer wrapper closes a controller pipe and denies/stops its managed child.
 - If the controller itself is killed and its process identity is lost, the guard preserves scratch and its reservation rather than signal a potentially unrelated group. Remaining writers may require operator intervention. Deliberately detached processes are outside the process-group guarantee.
+- Tests that deliberately remove read access inside scratch can trigger measurement failure and stop the run. Keep this compatibility constraint in mind for permission/error-injection suites; the guard never treats unreadable bytes as zero.
 - Writes outside owned temporary storage remain outside the scratch ceiling. Whole-volume pressure is checked separately. A fast write can consume space before a sample; a slow measurement has a bounded termination allowance. These are watchdog checks, not kernel quotas.
 - The wrapper is for cooperative development tools. A hostile process running as the same user can tamper with that user's state; use an existing sandbox or quota backend when an enforceable write boundary is required.
 
