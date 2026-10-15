@@ -22,7 +22,7 @@ Warnings normally repeat at most every six hours, urgent alerts hourly. Severity
 
 The private `state/monitor/monitor.sqlite3` is the active authority for original folder baselines, folder history, capacity/memory history and alert decisions. The human report is derived from it. The earlier prototype's JSON files remain unchanged for rollback; their monitor jobs are disabled after activation. There is no service, telemetry endpoint or network upload.
 
-- Folder measurements run sequentially through native `du`, with per-root and whole-pass deadlines, output limits and an aggregate-count limit. The inexpensive capacity/memory probe has its own scheduled job, so it does not wait for a folder scan.
+- Folder measurements run sequentially through native `du`, with per-root and whole-pass deadlines, output limits and an aggregate-count limit. When a whole-pass deadline is reached, the next pass starts one root later so later roots cannot be permanently starved. The inexpensive capacity/memory probe has its own scheduled job, so it does not wait for a folder scan.
 - Detailed folder samples retain up to 90 days/2160 samples; daily summaries retain two years/730 samples. Combined folder-history payloads are capped at 96 MiB. Original baselines are retained and bounded to 12000 aggregates.
 - Capacity/memory samples retain up to seven days/2016 samples and 8 MiB of payloads. Comparisons across reboot identities are not reported as memory growth.
 - Each payload is bounded to 4 MiB; the SQLite main database is capped at 256 MiB. SQLite transaction journals need temporary space in addition to this cap. Budget exhaustion fails visibly. This is a storage budget, not a kernel quota on every temporary byte.

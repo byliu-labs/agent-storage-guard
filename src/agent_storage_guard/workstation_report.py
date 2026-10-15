@@ -55,8 +55,14 @@ def render(payload: dict) -> str:
     inventory = payload.get("worktrees", {})
     if inventory:
         lines.extend(["", "Git worktrees (read-only inventory; not cleanup approval)"])
-        for item in inventory.get("worktrees", [])[:60]:
+        rows = inventory.get("worktrees", [])
+        stale = [item for item in rows if item.get("prunable")]
+        current = [item for item in rows if not item.get("prunable")]
+        lines.append(f"{len(current)} current Git registrations; {len(stale)} stale registrations (not evidence of disk usage).")
+        for item in current[:60]:
             lines.append(f"- {item.get('path', item.get('worktree', '?'))} ({item.get('branch', 'detached')})")
+        if len(current) > 60:
+            lines.append("More registrations are available in 'monitor status --json'.")
         if inventory.get("truncated") or inventory.get("issues"):
             lines.append("Inventory coverage is incomplete; inspect monitor status --json for details.")
     lines.extend(["", "Review large recent growers before cleanup; preserve source, active worktrees and unfinished outputs.",

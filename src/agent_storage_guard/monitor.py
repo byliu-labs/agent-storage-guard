@@ -152,10 +152,18 @@ def scan(directory: Path, config: dict) -> bool:
     try:
         with locked(directory, "scan.lock", wait=False):
             started = time.time()
-            groups = folder_scan.scan_roots(config["roots"], timeout=config["scan_timeout_seconds"],
+            started_clock = time.monotonic()
+            with MonitorStore(directory) as store:
+                offset = store.get_value("scan_offset", 0) % max(1, len(config["roots"]))
+            roots = config["roots"][offset:] + config["roots"][:offset]
+            groups = folder_scan.scan_roots(roots, timeout=config["scan_timeout_seconds"],
                                             total_timeout=config["scan_total_timeout_seconds"])
             with MonitorStore(directory) as store:
                 store.record_scan(groups, shutil.disk_usage(directory).free, now=time.time(), started_at=started)
+                # Advance by one, not by the number visited: fixed budget-sized
+                # strides can permanently starve alternate roots.
+                if time.monotonic() - started_clock >= config["scan_total_timeout_seconds"]:
+                    store.set_value("scan_offset", (offset + 1) % max(1, len(roots)))
             roots = [Path(item["path"]) for item in config["roots"]]
             inventory = worktrees.inventory(roots)
             with MonitorStore(directory) as store:

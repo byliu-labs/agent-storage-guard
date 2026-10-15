@@ -103,3 +103,24 @@ def test_log_retention_keeps_launchd_descriptor_and_bounded_backup(tmp_path):
     assert path.stat().st_ino == inode
     assert path.read_bytes() == b"new error\n"
     assert path.with_suffix(".previous").stat().st_size == 1024 ** 2
+
+
+def test_constrained_native_passes_give_every_root_first_priority(tmp_path):
+    from agent_storage_guard import monitor
+    from agent_storage_guard.monitor_store import MonitorStore
+    roots = [tmp_path / f"root-{index}" for index in range(4)]
+    for root in roots:
+        root.mkdir()
+    directory = tmp_path / "monitor"
+    monitor.initialize(directory, roots)
+    config = monitor.load_config(directory)
+    config["scan_total_timeout_seconds"] = .000001
+    observed = []
+    for _ in range(4):
+        assert monitor.scan(directory, config)
+        with MonitorStore(directory) as store:
+            groups = store.latest_scan()["groups"]
+            observed.append(next(iter(groups)))
+            assert set(groups) == {str(root) for root in roots}
+            assert all(not item["complete"] for item in groups.values())
+    assert observed == [str(root) for root in roots]

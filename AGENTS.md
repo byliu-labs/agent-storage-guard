@@ -18,4 +18,6 @@ Use Python 3.11+ and uv. Work on a feature branch and use pull requests. Runtime
 
 Run `uv run pytest` and `uv run pytest --collect-only -q`. Process tests require unconditional teardown. Test concurrent admission, interruption, parent death, path replacement, stale identity, permission gaps and recovery with real small files/processes. Never fill the host disk to test low space.
 
+Native notification tests use a separate bundle identity so temporary helpers cannot redirect the installed app's notification actions or inspect its permissions.
+
 Keep modules under 500 lines. Add settings only with all consumers and an observable behavior test. Before publishing, inspect the tracked tree for private paths, local inventory, credentials and unnecessary generated artifacts.
