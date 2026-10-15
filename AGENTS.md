@@ -11,6 +11,7 @@ This package monitors workstation storage/memory and guards managed commands and
 - Fail visibly on incomplete measurements, corrupt state and cleanup failures. Do not claim a watchdog is a hard filesystem quota.
 - Preserve original baselines on scan gaps. Store history and alert delivery state in the same bounded SQLite database; only acknowledge notifications after the OS accepts them. Validate alert actions through the installed native helper, including a click after its sender exits.
 - Report observations separately from causes. Swap size, uptime and a large folder alone cannot establish a leak or authorize disposal. Alerts include a concrete safe next action.
+- Preserve the overview's five-part order: current status, useful period changes, storage areas and deltas, specific next actions, then a collapsed evidence appendix. Review controls lead to the relevant folders; partial/older data stays explicit and parent/child totals never sum twice.
 
 ## Workflow
 

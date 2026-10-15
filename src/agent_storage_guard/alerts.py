@@ -116,6 +116,16 @@ def _scan_alerts(scan: dict, config: dict, now: float) -> dict:
     return active
 
 
+def _confirmation(state: dict, key: str, current: dict, previous: dict | None,
+                  condition, interval: float) -> dict | None:
+    reference = state.get(key) or previous or None
+    if reference and condition(reference) != condition(current):
+        reference = None
+    if reference is None or current["time"] - reference["time"] >= interval / 2:
+        state[key] = deepcopy(current)
+    return reference
+
+
 def evaluate(capacity: dict, previous_capacity: dict | None, scan: dict, config: dict,
              policy_state: dict, now: float) -> tuple[list[dict], dict]:
     """Observe each sample once; return active alerts and caller-persisted policy state.
@@ -128,8 +138,15 @@ def evaluate(capacity: dict, previous_capacity: dict | None, scan: dict, config:
     if capacity and capacity.get("time") != state.get("capacity_time"):
         observed = capacity["time"]
         if 0 <= now - observed <= config.get("tick_interval_seconds", 300) * 2.5:
-            _reserve(capacity, previous_capacity, active, config, observed)
-            _memory(capacity, previous_capacity, active, config, observed)
+            interval = config.get("tick_interval_seconds", 300)
+            reserve = config.get("warn_free_bytes", 50 * GIB)
+            margin = config.get("recovery_margin_bytes", 2 * GIB)
+            space_previous = _confirmation(state, "reserve_confirmation", capacity, previous_capacity,
+                lambda c: (c["free_bytes"] < reserve, c["free_bytes"] >= reserve + margin), interval)
+            memory_previous = _confirmation(state, "memory_confirmation", capacity, previous_capacity,
+                lambda c: (c.get("memory", {}).get("pressure"), c.get("memory", {}).get("boot_time")), interval)
+            _reserve(capacity, space_previous, active, config, observed)
+            _memory(capacity, memory_previous, active, config, observed)
         state["capacity_time"] = observed
     if scan and scan.get("time") != state.get("scan_time"):
         for key in list(active):

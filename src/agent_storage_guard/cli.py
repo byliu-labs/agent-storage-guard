@@ -66,6 +66,8 @@ def parser() -> argparse.ArgumentParser:
         probe.add_argument("--json", action="store_true")
         if name != "status":
             probe.add_argument("--notify", action="store_true")
+    report = monitoring.add_parser("report", help="refresh current status and generate the local HTML overview")
+    report.add_argument("--open", action="store_true", help="open the overview in your default browser")
     install = monitoring.add_parser("install", help="prepare macOS launchd jobs and notification identity")
     install.add_argument("--activate", action="store_true", help="activate jobs and replace legacy monitor jobs with rollback")
     rollback = monitoring.add_parser("rollback", help="restore jobs from an installation manifest")

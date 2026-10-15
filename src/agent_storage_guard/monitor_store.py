@@ -247,6 +247,20 @@ class MonitorStore:
         with self._connection() as connection:
             return self._history(connection)
 
+    def report_history(self) -> list[dict]:
+        """A bounded comparison sample: recent evidence plus hour/day/week anchors."""
+        with self._connection() as connection:
+            rows = connection.execute("SELECT observed,payload FROM snapshots ORDER BY observed DESC LIMIT 8").fetchall()
+            if not rows:
+                return []
+            latest = rows[0][0]
+            selected = dict(rows)
+            for window in (3600, 86400, 7 * 86400):
+                selected.update(connection.execute(
+                    "SELECT observed,payload FROM snapshots ORDER BY ABS(observed-?) LIMIT 2",
+                    (latest - window,)).fetchall())
+            return [json.loads(selected[observed]) for observed in sorted(selected)]
+
     @staticmethod
     def _baselines(connection: sqlite3.Connection) -> dict:
         return {row[0]: json.loads(row[1]) for row in connection.execute("SELECT path,payload FROM baselines")}

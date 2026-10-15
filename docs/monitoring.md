@@ -14,13 +14,27 @@ The monitor observes configured folders, the free space on its state volume, and
 
 Large swap usage and long uptime alone do not establish a leak or justify a restart. Swap is managed by macOS. The monitor records swap, compressed bytes, RAM, uptime and pressure, and reports swap changes across retained samples from the same boot. It does not claim a process caused growth merely because the process was running nearby in time.
 
-Native notifications identify Agent Storage Guard and provide an **Open storage report** action. Memory alerts also offer **Open Activity Monitor**. macOS controls permission, banner presentation and Focus suppression; accepted enqueue is not proof of visible delivery. Failed permission/enqueue attempts are not marked delivered. The AppleScript fallback has reduced identity/action support.
+Native notifications identify Agent Storage Guard and provide an **Open storage overview** action opening `report.html` in your browser. Memory alerts also offer **Open Activity Monitor**. macOS controls permission, banner presentation and Focus suppression; accepted enqueue is not proof of visible delivery. Failed permission/enqueue attempts are not marked delivered. The AppleScript fallback has reduced identity/action support.
+
+## Read the overview
+
+The default view has five parts, in this order:
+
+1. **Current status:** available disk space, shortfall from the reserve, current memory pressure, swap and actual measurement time. Old or missing evidence is labeled.
+2. **What changed:** the useful comparison available from actual hours/day/week history. A day of folder history remains visible even when frequent capacity probes started only minutes ago; their intervals are shown separately.
+3. **Where storage is used:** projects/worktrees, agent data, temporary work, package caches and other configured areas. Nested roots are counted once. Partial areas distinguish current measured subsets, earlier measurements and unknown remainders; folder accounting is not physical reclaim.
+4. **What you can do:** prioritized recommendations tied to measured locations, their sizes and changes. Review buttons open the related evidence. Older large outputs require a fresh check before any cleanup, and active/unfinished work remains protected.
+5. **Details and evidence:** folded by default. Searchable paths, per-folder measurements, coverage gaps, baseline details and Git registrations are disclosed here. Virtual groups copy their actual parent location; use Finder's Go to Folder to inspect it.
+
+`agent-storage-guard monitor report --open` refreshes the inexpensive capacity/memory probe and opens the HTML overview. It does not start a slow scan. `monitor scan` requests a folder pass. The saved HTML works offline without a server or external assets. The reload button reloads the latest saved file; it does not initiate a measurement or delete files. The text output remains available for terminal use.
+
+A menu bar entry can later expose this same overview and monitor health; it is not installed by this version.
 
 Warnings normally repeat at most every six hours, urgent alerts hourly. Severity escalation bypasses cooldown. Reserve recovery requires two samples above a 2 GiB recovery margin. Warning confirmation requires samples between half and 2.5 times the configured probe interval; repeated immediate manual invocations do not establish sustained pressure. Growth alerts deduplicate overlapping parent/child paths and require further material growth before repeating. Stale or unsupported evidence is not a healthy measurement.
 
 ## Evidence and budgets
 
-The private `state/monitor/monitor.sqlite3` is the active authority for original folder baselines, folder history, capacity/memory history and alert decisions. The human report is derived from it. The earlier prototype's JSON files remain unchanged for rollback; their monitor jobs are disabled after activation. There is no service, telemetry endpoint or network upload.
+The private `state/monitor/monitor.sqlite3` is the active authority for original folder baselines, folder history, capacity/memory history and alert decisions. The HTML overview and terminal text report are derived from it. The overview loads a bounded set of recent and hour/day/week reference snapshots, instead of reloading the entire retained history on every probe. The earlier prototype's JSON files remain unchanged for rollback; their monitor jobs are disabled after activation. There is no service, telemetry endpoint or network upload.
 
 - Folder measurements run sequentially through native `du`, with per-root and whole-pass deadlines, output limits and an aggregate-count limit. When a whole-pass deadline is reached, the next pass starts one root later so later roots cannot be permanently starved. The inexpensive capacity/memory probe has its own scheduled job, so it does not wait for a folder scan.
 - Detailed folder samples retain up to 90 days/2160 samples; daily summaries retain two years/730 samples. Combined folder-history payloads are capped at 96 MiB. Original baselines are retained and bounded to 12000 aggregates.

@@ -84,7 +84,7 @@ if CommandLine.arguments.contains("--diagnose") {
     }
 } else if CommandLine.arguments.count >= 5 {
     let args = CommandLine.arguments
-    let report = UNNotificationAction(identifier: "REPORT", title: "Open storage report", options: [.foreground])
+    let report = UNNotificationAction(identifier: "REPORT", title: "Open storage overview", options: [.foreground])
     let memory = UNNotificationAction(identifier: "MEMORY", title: "Open Activity Monitor", options: [.foreground])
     center.setNotificationCategories([
         UNNotificationCategory(identifier: "REPORT", actions: [report], intentIdentifiers: []),

@@ -39,6 +39,11 @@ def test_monitor_real_scan_and_report(tmp_path):
         previous = store.latest_capacity()
         previous["time"] -= 300
         store.set_value("latest_capacity", previous)
+        policy = store.get_value("alert_policy")
+        for key in ("reserve_confirmation", "memory_confirmation"):
+            if key in policy:
+                policy[key]["time"] -= 300
+        store.set_value("alert_policy", policy)
     (root / "fixture").write_bytes(b"b" * 16384)
     assert invoke(state, "scan").returncode == 0
     result = invoke(state, "status")
@@ -48,6 +53,9 @@ def test_monitor_real_scan_and_report(tmp_path):
     assert str(root) in result.stdout
     assert "Memory" in result.stdout and "UTC" in result.stdout
     assert (state / "monitor" / "report.txt").read_text() == result.stdout
+    overview = (state / "monitor" / "report.html").read_text()
+    assert "Current status" in overview and "Where storage is used" in overview
+    assert '<details id="appendix"' in overview
     assert config_path.stat().st_mode & 0o077 == 0
 
 
@@ -124,3 +132,20 @@ def test_constrained_native_passes_give_every_root_first_priority(tmp_path):
             assert set(groups) == {str(root) for root in roots}
             assert all(not item["complete"] for item in groups.values())
     assert observed == [str(root) for root in roots]
+
+
+def test_report_command_refreshes_current_status_and_prints_html_location(tmp_path):
+    state = tmp_path / "state"
+    assert invoke(state, "init", "--root", str(tmp_path / "project")).returncode == 0
+    result = invoke(state, "report")
+    assert result.returncode == 0, result.stderr
+    path = Path(result.stdout.strip())
+    assert path == state / "monitor/report.html"
+    assert path.is_file() and path.stat().st_mode & 0o077 == 0
+    html = path.read_text()
+    assert "Current status" in html and "What you can do" in html
+    from agent_storage_guard.monitor_store import MonitorStore
+    with MonitorStore(state / "monitor") as store:
+        assert store.latest_capacity()["total_bytes"] > 0
+        assert store.latest_capacity()["free_bytes"] > 0
+        assert not store.latest_scan()  # Opening never starts a slow parallel scan.

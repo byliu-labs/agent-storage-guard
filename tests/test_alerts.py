@@ -172,3 +172,22 @@ def test_first_status_does_not_relabel_stale_capacity_as_new_incident():
 def test_alert_observation_time_is_measurement_time_not_report_time():
     a,_ = alerts.evaluate(capacity(1300,10,"critical"),None,{}, {},{},1400)
     assert all(item["observed_at"] == 1300 for item in a)
+
+
+def test_frequent_report_refreshes_do_not_postpone_sustained_warning_forever():
+    previous, state = None, {}
+    for at in (1000, 1100, 1200, 1300):
+        current = capacity(at, 40, "warning")
+        active, state = step(current, previous, state)
+        previous = current
+    assert {item["key"] for item in active} == {"reserve", "memory"}
+
+
+def test_a_healthy_sample_breaks_memory_confirmation_during_frequent_refreshes():
+    previous, state = None, {}
+    for at, pressure in [(1000, "warning"), (1100, "normal"), (1200, "warning"),
+                         (1300, "normal"), (1400, "warning")]:
+        current = capacity(at, 80, pressure)
+        active, state = step(current, previous, state)
+        previous = current
+    assert not active

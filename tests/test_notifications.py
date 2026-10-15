@@ -22,11 +22,12 @@ def test_prepare_app_builds_registered_identity_and_supports_read_only_selftest(
     # A temporary registered helper must never replace the installed app's
     # Launch Services association or inspect its notification permissions.
     monkeypatch.setattr(notifications, "BUNDLE_ID", notifications.BUNDLE_ID + ".tests")
-    app = notifications.prepare_app(tmp_path / "sender", tmp_path / "report.txt")
+    app = notifications.prepare_app(tmp_path / "sender", tmp_path / "report.html")
     manifest = plistlib.loads((app / "Contents/Info.plist").read_bytes())
     assert manifest["CFBundleDisplayName"] == "Agent Storage Guard"
     assert manifest["LSUIElement"]
     assert manifest["CFBundleIdentifier"].endswith(".tests")
+    assert manifest["ASGReportPath"] == str(tmp_path / "report.html")
     executable = app / "Contents/MacOS/storage-alert"
     result = subprocess.run([str(executable), "--self-test"], capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr

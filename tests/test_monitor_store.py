@@ -246,3 +246,16 @@ def test_absence_interval_uses_parent_measurement_time_not_scan_completion(tmp_p
     gone = store.record_scan(sample(100, 17200), 1000, now=18200)
     assert gone["groups"]["/projects/new"]["observed_at"] == 17200
     assert gone["changes"]["/projects/new"]["hour_elapsed_seconds"] == 3600
+
+
+def test_report_history_is_bounded_and_preserves_hour_day_week_anchors(tmp_path):
+    latest = 2_000_000
+    anchors = {latest - 3600, latest - 86400, latest - 7 * 86400}
+    observations = sorted({latest - hour * 3600 for hour in range(0, 240, 6)} | anchors | {latest})
+    with MonitorStore(tmp_path / "state") as store:
+        for observed in observations:
+            store.record_scan({"/dev": {"complete": True, "bytes": observed}}, 100, now=observed)
+        selected = store.report_history()
+    assert len(selected) <= 14
+    assert anchors <= {sample["time"] for sample in selected}
+    assert selected[-1]["time"] == latest

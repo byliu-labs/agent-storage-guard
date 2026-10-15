@@ -11,7 +11,7 @@ import sys
 import tempfile
 import time
 
-from . import ownership, monitor_roots, workstation_report
+from . import ownership, monitor_roots, workstation_report, storage_overview
 
 
 @contextmanager
@@ -24,8 +24,8 @@ def locked(directory: Path, name: str, wait: bool = True):
         os.close(fd)
 
 
-def write_report(directory: Path, text: str) -> None:
-    target = directory / "report.txt"
+def write_report(directory: Path, text: str, name: str = "report.txt") -> None:
+    target = directory / name
     if target.exists() or target.is_symlink():
         os.close(ownership.checked_file(target))
     fd, temporary = tempfile.mkstemp(prefix=".report-", dir=directory)
@@ -106,7 +106,8 @@ def migrate(directory: Path, source: Path) -> dict:
 def snapshot(store, config: dict) -> dict:
     capacity = store.latest_capacity() or {}
     memory = capacity.get("memory", {})
-    history = [item for item in store.capacity_history(limit=2016)
+    capacity_history = store.capacity_history(limit=2016)
+    history = [item for item in capacity_history
                if item.get("memory", {}).get("boot_time") == memory.get("boot_time")
                and "swap_used_bytes" in item.get("memory", {})]
     trend = {}
@@ -117,6 +118,7 @@ def snapshot(store, config: dict) -> dict:
                  "swap_delta_bytes": memory["swap_used_bytes"] - baseline["memory"]["swap_used_bytes"]}
     return {"time": time.time(), "config": config, "capacity": capacity, "memory_trend": trend,
             "scan": store.latest_scan() or {}, "alerts": store.get_value("active_alerts", []),
+            "folder_history": store.report_history(), "capacity_history": capacity_history,
             "worktrees": store.get_value("worktrees", {})}
 
 
@@ -125,8 +127,13 @@ def refresh(directory: Path, config: dict, *, probe: bool, send: bool) -> dict:
     from .monitor_store import MonitorStore
     with locked(directory, "policy.lock"), MonitorStore(directory) as store:
         previous = store.latest_capacity() or {}
-        capacity = {"time": time.time(), "free_bytes": shutil.disk_usage(directory).free,
-                    "memory": memory_pressure.sample()} if probe else previous
+        capacity = previous
+        if probe:
+            usage = shutil.disk_usage(directory)
+            capacity = {"time": time.time(), "free_bytes": usage.free,
+                        "total_bytes": usage.total, "used_bytes": usage.used,
+                        "volume_path": str(directory), "volume_device": directory.stat().st_dev,
+                        "memory": memory_pressure.sample()}
         if probe:
             store.record_capacity(capacity)
         now = time.time()
@@ -136,11 +143,12 @@ def refresh(directory: Path, config: dict, *, probe: bool, send: bool) -> dict:
         store.set_value("alert_policy", policy)
         payload = snapshot(store, config)
         write_report(directory, workstation_report.render(payload))
+        write_report(directory, storage_overview.render(payload), "report.html")
         if send:
             app = store.get_value("notification_app")
             for alert in alerts.delivery_candidates(active, policy, now, config):
                 notifications.notify(alert, app=Path(app) if app else None,
-                                     report_path=directory / "report.txt")
+                                     report_path=directory / "report.html")
                 policy = alerts.mark_delivered(policy, alert, now)
                 store.set_value("alert_policy", policy)
         return payload
@@ -184,7 +192,7 @@ def dispatch(args) -> int:
     if directory.exists():
         ownership.private_directory(directory, create=False)
         rotate_logs(directory)
-    if action == "status" and not directory.exists():
+    if action in {"status", "report"} and not directory.exists():
         print("Monitor not installed. Run 'agent-storage-guard monitor init'.")
         return 0
     if action == "init":
@@ -203,13 +211,23 @@ def dispatch(args) -> int:
             executable = Path(shutil.which("agent-storage-guard") or sys.argv[0]).absolute()
             if not executable.is_file():
                 raise RuntimeError("install the CLI with 'uv tool install .' before scheduling")
-            app = notifications.prepare_app(directory, directory / "report.txt") if sys.platform == "darwin" else None
+            refresh(directory, config, probe=True, send=False)
+            app = notifications.prepare_app(directory, directory / "report.html") if sys.platform == "darwin" else None
             with MonitorStore(directory) as store:
                 store.set_value("notification_app", str(app) if app else None)
             payload = installation.install(Path.home(), executable, args.state, activate=args.activate,
                 intervals={"tick": config["tick_interval_seconds"], "scan": config["scan_interval_seconds"]})
         elif action == "status":
             payload = read_status(directory, config)
+        elif action == "report":
+            refresh(directory, config, probe=True, send=False)
+            target = directory / "report.html"
+            if args.open:
+                import webbrowser
+                if not webbrowser.open(target.absolute().as_uri()):
+                    raise RuntimeError(f"browser could not open {target}; open it manually")
+            print(target.absolute())
+            return 0
         else:
             payload = refresh(directory, config, probe=True, send=args.notify)
             if action == "scan":

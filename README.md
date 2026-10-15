@@ -34,13 +34,15 @@ For a locally installed command, run `uv tool install .` from the checkout. No p
 ```sh
 agent-storage-guard monitor init
 agent-storage-guard monitor scan
-agent-storage-guard monitor status
+agent-storage-guard monitor report --open
 agent-storage-guard monitor install --activate
 ```
 
 The macOS installation measures free space and memory every five minutes, and configured folders hourly. Notifications explain the evidence and next action: review recent growers, move finished work, or save work and quit unused apps through Activity Monitor. Unreadable folders produce one grouped notice, with static gaps suppressed. Nothing is automatically deleted, stopped or restarted.
 
-Use `monitor init --root /absolute/path/to/dev` (repeatable) to choose roots instead of the defaults. Edit the private `~/.asg/monitor/config.json` for thresholds or intervals; rerun `monitor install --activate` after changing scheduling intervals. Baselines, bounded history and alert state live in the same local SQLite database. The report is `~/.asg/monitor/report.txt`; `monitor status --json` exposes evidence for integrations.
+The notification opens a local HTML overview in your browser: current status, useful changes over the available hours/day/week, storage areas and their deltas, specific next actions, then a collapsed evidence appendix. Review controls open the relevant folder details and filter them; copy controls provide actual folder paths, including the real parent for virtual prefix groups. Bookmark the page or use `monitor report --open` to find it again. No web service or remote assets are needed.
+
+Use `monitor init --root /absolute/path/to/dev` (repeatable) to choose roots instead of the defaults. Edit the private `~/.asg/monitor/config.json` for thresholds or intervals; rerun `monitor install --activate` after changing scheduling intervals. Baselines, bounded history and alert state live in the same local SQLite database. The overview is `~/.asg/monitor/report.html`; `monitor status` remains a terminal text view, and `monitor status --json` exposes evidence for integrations.
 
 To migrate the earlier pc-backup monitor, run this **before** initializing the new monitor:
 
