@@ -1,6 +1,6 @@
 # Agent Storage Guard development
 
-This package guards managed commands and their explicitly allocated scratch. Keep it small, headless and independent of any particular agent harness or backup system.
+This package monitors workstation storage/memory and guards managed commands and their explicitly allocated scratch. Keep it headless and independent of any particular agent harness or backup system.
 
 ## Safety invariants
 
@@ -9,6 +9,8 @@ This package guards managed commands and their explicitly allocated scratch. Kee
 - Preserve source, Git state, uncommitted work and retained evidence. Trash still consumes space.
 - Never store command arguments, environment values or credentials in receipts. Use synthetic fixtures for examples and published evidence.
 - Fail visibly on incomplete measurements, corrupt state and cleanup failures. Do not claim a watchdog is a hard filesystem quota.
+- Preserve original baselines on scan gaps. Store history and alert delivery state in the same bounded SQLite database; only acknowledge notifications after the OS accepts them. Validate alert actions through the installed native helper, including a click after its sender exits.
+- Report observations separately from causes. Swap size, uptime and a large folder alone cannot establish a leak or authorize disposal. Alerts include a concrete safe next action.
 
 ## Workflow
 

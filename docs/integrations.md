@@ -23,6 +23,6 @@ Wrap the ordinary test command inside an agent run. Delegate's advanced command-
 
 ## Existing monitoring tools
 
-Use existing capacity/history tools alongside this guard. `status` and receipts expose local run ownership for investigation. A read-only MCP connector may consume them in a future independently reviewed integration; no new MCP service or duplicate folder-history store is installed here.
+The built-in monitor provides capacity, folder baselines/history, macOS memory pressure and bounded Git worktree discovery. `monitor status --json` exposes its evidence; `status` and receipts expose guarded run ownership. Other visualizers remain optional. Migration imports the previous prototype's history once and activation replaces its scheduled jobs; one SQLite store becomes the active monitor authority.
 
 Nothing in this project proves that a directory outside its own registry is safe to remove. Use each worktree manager's reviewed lifecycle and preserve unfinished outputs.

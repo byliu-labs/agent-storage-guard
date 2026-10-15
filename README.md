@@ -1,8 +1,8 @@
 # Agent Storage Guard
 
-Shared storage admission and reversible scratch ownership for managed test and development commands.
+Local disk growth history, actionable storage and memory alerts, and reversible scratch ownership for managed commands.
 
-**Experimental.** This is a small extraction of a tested local guard. It protects commands launched through it; it is not a security sandbox or a hard filesystem quota. It does not replace your scanner, monitoring app, agent runner or worktree manager.
+**Experimental.** One installation includes a read-only workstation monitor and a command guard. It works independently of TreeMap, Disk Steward or any agent runner. The guard protects commands launched through it; it is not a security sandbox or a hard filesystem quota.
 
 ## Why this component
 
@@ -16,7 +16,8 @@ Existing projects already solve adjacent problems. See [the reuse decision](docs
 
 - Python 3.11+, macOS or Linux.
 - Native `du`, `ps` and `lsof`. macOS provides these; Linux installations must provide `lsof` as well. Missing/incomplete process or file-open evidence fails closed.
-- No runtime Python dependencies, daemon, network service or automatic tool downloads.
+- No runtime Python dependencies, network service or automatic tool downloads. Monitoring uses short scheduled processes and one private SQLite store.
+- macOS native notifications with report/Activity Monitor actions use a tiny helper compiled with Apple's installed `swiftc` and frameworks. Core monitoring and the guard do not need Swift. Linux notifications optionally use an already installed `notify-send`.
 
 From a checkout:
 
@@ -27,6 +28,29 @@ uv run agent-storage-guard run --estimate-gib 2 --label project-tests -- uv run 
 ```
 
 For a locally installed command, run `uv tool install .` from the checkout. No package is published on PyPI by this repository setup.
+
+## Recommended workstation setup
+
+```sh
+agent-storage-guard monitor init
+agent-storage-guard monitor scan
+agent-storage-guard monitor status
+agent-storage-guard monitor install --activate
+```
+
+The macOS installation measures free space and memory every five minutes, and configured folders hourly. Notifications explain the evidence and next action: review recent growers, move finished work, or save work and quit unused apps through Activity Monitor. Unreadable folders produce one grouped notice, with static gaps suppressed. Nothing is automatically deleted, stopped or restarted.
+
+Use `monitor init --root /absolute/path/to/dev` (repeatable) to choose roots instead of the defaults. Edit the private `~/.asg/monitor/config.json` for thresholds or intervals; rerun `monitor install --activate` after changing scheduling intervals. Baselines, bounded history and alert state live in the same local SQLite database. The report is `~/.asg/monitor/report.txt`; `monitor status --json` exposes evidence for integrations.
+
+To migrate the earlier pc-backup monitor, run this **before** initializing the new monitor:
+
+```sh
+agent-storage-guard monitor migrate --from-state ~/.local/state/pc-backup/disk
+agent-storage-guard monitor status
+agent-storage-guard monitor install --activate
+```
+
+Migration preserves original baseline timestamps, complete/incomplete evidence and history without modifying source files. It refuses a busy legacy scan; retry once the scan completes. Activation replaces only the legacy disk monitor jobs and archives their plists with an explicit rollback manifest; backup schedules are unaffected. Run `monitor rollback /absolute/path/to/manifest.json` to restore the previous jobs. [Monitoring behavior, budgets and platform limits](docs/monitoring.md) describes retention and safe responses.
 
 ## Run, inspect and recover
 
@@ -74,4 +98,4 @@ uv build
 
 Tests use small real files and subprocesses, exercise concurrent starts, interruption, owner death, root replacement, corrupt state, sparse/hardlink accounting and permission failures. CI runs macOS and Linux on Python 3.11 and 3.13. No test should fill the host disk to simulate low space.
 
-See [integration examples](docs/integrations.md), [measurement details](docs/measurement.md) and [developer instructions](AGENTS.md). This version installs no agent hooks or monitoring schedule. Existing monitoring can remain the operational backstop.
+See [integration examples](docs/integrations.md), [measurement details](docs/measurement.md), [monitoring](docs/monitoring.md) and [developer instructions](AGENTS.md). Installation does not rewrite other agents' commands or install global agent hooks. Wrap concrete test/build commands with `run` to enforce their scratch budgets.
