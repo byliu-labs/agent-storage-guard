@@ -46,7 +46,9 @@ def inventory(roots: list[Path], max_depth: int = 4, max_entries: int = 10000,
     result = {"repositories": [], "worktrees": [], "issues": [], "truncated": False}
     deadline, examined = time.monotonic() + total_seconds, 0
     seen_directories, seen_repositories, seen_worktrees = set(), set(), set()
-    stack = [(Path(root).absolute(), 0) for root in roots]
+    # Respect configured priority so a large temporary root cannot consume the
+    # discovery budget before the user's development roots are visited.
+    stack = [(Path(root).absolute(), 0) for root in reversed(roots)]
     excluded = {".git", "node_modules", ".venv", "venv", "__pycache__", ".cache"}
     while stack:
         if examined >= max_entries or time.monotonic() >= deadline:
@@ -78,6 +80,9 @@ def inventory(roots: list[Path], max_depth: int = 4, max_entries: int = 10000,
                         if row.get("path") not in seen_worktrees:
                             seen_worktrees.add(row.get("path"))
                             result["worktrees"].append(row)
+                # Git already enumerated this repository's worktrees. Generated
+                # outputs inside a checkout are not repository-discovery roots.
+                continue
             if depth < max_depth:
                 with os.scandir(path) as entries:
                     for entry in entries:

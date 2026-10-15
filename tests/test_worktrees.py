@@ -45,3 +45,17 @@ def test_missing_root_is_an_explicit_coverage_gap(tmp_path: Path) -> None:
 def test_porcelain_parser_handles_newlines_in_paths() -> None:
     rows = worktrees.parse_porcelain(b"worktree /a/path\nwith newline\0HEAD abc\0branch refs/heads/main\0\0")
     assert rows == [{"path": "/a/path\nwith newline", "head": "abc", "branch": "main"}]
+
+
+def test_discovery_prioritizes_first_root_and_skips_repository_outputs(tmp_path):
+    first, noisy = tmp_path / "development", tmp_path / "temporary"
+    first.mkdir()
+    noisy.mkdir()
+    git(first, "init")
+    for index in range(20):
+        (first / f"generated-{index}").mkdir()
+        (noisy / f"temporary-{index}").mkdir()
+    result = worktrees.inventory([first, noisy], max_entries=5)
+    assert len(result["repositories"]) == 1
+    assert result["repositories"][0]["path"] == str(first)
+    assert result["truncated"]
