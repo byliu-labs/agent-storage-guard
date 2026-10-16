@@ -10,6 +10,8 @@ The cleanup trace and its improvement handoff both identify execution failure: t
 
 ## Design correction
 
+Reusable guidance describes discovery patterns and verifiable completion criteria. Concrete target paths come from the current report or fresh filesystem discovery; machine-specific folder names, approval lists and restore commands belong in private run evidence. The public case study and investigation procedure contain no workstation-specific cleanup targets.
+
 - Share one investigation plan between HTML and copied prompt. Select large measured branches independently of growth; show shallow branches without counting their children twice. Keep old/unknown measurements explicit.
 - Include every configured root and say explicitly that monitor coverage is narrower than a workstation audit. Stable large areas must not disappear behind a top-growers list.
 - Embed structured evidence in an inert, folded JSON textarea. Retain all report folder rows and real parent paths for virtual groups. Agents can parse evidence without dumping CSS/JavaScript.
