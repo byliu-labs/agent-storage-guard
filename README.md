@@ -70,7 +70,7 @@ For scheduled monitoring, after reviewing the configuration:
 agent-storage-guard monitor install --activate
 ```
 
-On macOS, capacity/memory checks default to every five minutes and folder scans to hourly. See [monitoring](docs/monitoring.md) for configuration, platform limits and migration from the earlier backup monitor.
+On macOS, capacity/memory checks default to every five minutes and folder scans to hourly. See [monitoring](docs/monitoring.md) for configuration, platform limits and migration from the earlier backup monitor. Unattended hosts can opt into [Feishu/Lark alerts](docs/remote-alerts.md) and [custom CI storage roots](docs/ci-host-monitoring.md).
 
 ## Guard a command
 

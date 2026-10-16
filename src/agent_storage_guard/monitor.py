@@ -125,7 +125,7 @@ def snapshot(store, config: dict) -> dict:
 
 
 def refresh(directory: Path, config: dict, *, probe: bool, send: bool) -> dict:
-    from . import alerts, memory_pressure, notifications
+    from . import alerts, memory_pressure, delivery
     from .monitor_store import MonitorStore
     with locked(directory, "policy.lock"), MonitorStore(directory) as store:
         previous = store.latest_capacity() or {}
@@ -147,12 +147,8 @@ def refresh(directory: Path, config: dict, *, probe: bool, send: bool) -> dict:
         write_report(directory, workstation_report.render(payload))
         write_report(directory, storage_overview.render(payload), "report.html")
         if send:
-            app = store.get_value("notification_app")
-            for alert in alerts.delivery_candidates(active, policy, now, config):
-                notifications.notify(alert, app=Path(app) if app else None,
-                                     report_path=directory / "report.html")
-                policy = alerts.mark_delivered(policy, alert, now)
-                store.set_value("alert_policy", policy)
+            if not delivery.dispatch(store, config, active, policy, payload, now):
+                raise RuntimeError("alert delivery incomplete; run 'monitor delivery-check' for redacted destination health")
         return payload
 
 
@@ -207,6 +203,18 @@ def dispatch(args) -> int:
     else:
         directory = ownership.private_directory(directory, create=False)
         config = load_config(directory)
+        if action in {"delivery-check", "test-send"}:
+            from . import delivery
+            from .monitor_store import MonitorStore
+            with locked(directory, "policy.lock"), MonitorStore(directory) as store:
+                if action == "delivery-check":
+                    payload, code = delivery.check_configuration(config, store.get_value("delivery_state", {}))
+                else:
+                    if args.destination not in {s["id"] for s in delivery.destinations(config)}:
+                        raise ValueError("unknown destination; choose a configured destination id")
+                    payload, code = delivery.test_send(store, config, args.destination)
+            print(json.dumps(payload, indent=2))
+            return code
         if action == "install":
             from . import installation, notifications
             from .monitor_store import MonitorStore
@@ -232,7 +240,7 @@ def dispatch(args) -> int:
             print(target.absolute())
             return 0
         else:
-            payload = refresh(directory, config, probe=True, send=args.notify)
+            payload = refresh(directory, config, probe=True, send=args.notify and action != "scan")
             if action == "scan":
                 scan(directory, config)
                 payload = refresh(directory, config, probe=False, send=args.notify)
