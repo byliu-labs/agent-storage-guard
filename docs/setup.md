@@ -8,7 +8,7 @@ No hosted relay or paid messaging service is provisioned.
 ## Install and save Feishu settings
 
 ```sh
-uv tool install --force .
+uv tool install --reinstall .
 agent-storage-guard monitor setup --provider feishu
 ```
 

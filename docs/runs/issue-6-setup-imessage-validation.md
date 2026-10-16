@@ -32,6 +32,9 @@ evidence, not real-provider acceptance or production readiness.
 - `uv build`: wheel and source distribution built. An isolated wheel installation
   exposes setup/provider options and refuses non-interactive credential entry without
   creating state. Required modules and distribution notices are present.
+- Clean and repeated source installation with `uv tool install --reinstall .`
+  passed using isolated tool/bin directories, leaving the user's installed tools
+  untouched. Setup options were available from the resulting installed executable.
 - `git diff --check`, documentation-link validation and publication-candidate
   private-workspace/host-reference checks passed. All published examples are synthetic.
 
