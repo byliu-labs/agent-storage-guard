@@ -63,3 +63,16 @@ def test_imessage_health_has_actionable_automation_gate_without_account_data(mon
     assert "Automation" in result["destinations"][0]["gate"]
     assert "Messages" in result["destinations"][0]["gate"]
     assert "private-fixture" not in json.dumps(result)
+
+
+def test_readable_remote_text_preserves_unknown_measurements_and_privacy():
+    alert = {"level":"warning", "key":"private/path", "message":"PRIVATE_FIXTURE", "observed_at":0}
+    payload = delivery.remote_payload(alert, {"time":1000}, {})
+    text = delivery.remote_text(payload)
+    assert text.startswith("Storage monitor — WARNING")
+    assert "Free space: Unavailable" in text
+    assert "Storage growth: Unavailable" in text
+    assert "Memory pressure: Unknown" in text
+    assert "Scan coverage: Unknown" in text
+    assert "1970-01-01 00:00 UTC" in text
+    assert "PRIVATE_FIXTURE" not in text and "private/path" not in text

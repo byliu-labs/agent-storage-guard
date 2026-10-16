@@ -112,10 +112,10 @@ existing native-only default. An empty list disables delivery; reports still wor
 to configured destinations. Plain scans, status, reports and configuration checks
 never send. Installation remains an explicit step described in the CI recipe.
 
-Remote text contains a JSON object with exactly these fields: non-identifying
+Remote text is a readable summary built only from these fields: non-identifying
 operator label, severity, measurement time, free GiB, growth GiB, memory pressure,
 coverage and a fixed safe next action. Capacities are rounded to tenths of a GiB;
-unknown measurements remain null/unknown, and old scan coverage is marked stale.
+unknown measurements display Unavailable/Unknown, and old scan coverage is marked stale.
 Private alert titles, paths, filenames, repository and branch names, hostnames,
 addresses, database names, arguments, environment values, credentials and raw
 errors are not forwarded. Provider routing and signing necessarily use the private
@@ -127,7 +127,7 @@ an independently authorized channel when asking an agent to audit it.
 iMessage uses the same payload allowlist. Its settings have exactly one field,
 `recipient`, containing a phone number or email in Keychain or an existing secure
 environment mechanism. Guided setup saves it privately. The adapter selects a
-connected iMessage account using the Messages scripting dictionary, without reading
+connected iMessage account using AppleScript and the Messages scripting dictionary, without reading
 chat history or Contacts. The account's normal sender identity remains visible.
 A signed-in GUI session and owner-approved Automation access are required; see
 [setup](setup.md). No SMS/RCS fallback is implemented. Recipient/text travel over

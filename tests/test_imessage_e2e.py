@@ -22,7 +22,7 @@ def test_installed_identity_test_send_reaches_controlled_native_boundary(tmp_pat
     boundary = tmp_path / "native-boundary"
     boundary.write_text(f'''#!{sys.executable}
 import sys
-assert sys.argv[1:] == ['-l','JavaScript','-']
+assert sys.argv[1:] == ['-']
 source=sys.stdin.read()
 assert 'synthetic@example.invalid' in source
 assert 'Synthetic test only' in source
@@ -84,3 +84,22 @@ def test_installed_sender_rejects_helper_rebound_to_another_state_before_executi
     with pytest.raises(RuntimeError, match="installed_helper_state_mismatch"):
         delivery.installed_test(app, "imessage", tmp_path / "expected-state")
     assert not marker.exists()
+
+
+@pytest.mark.parametrize("error,expected", [("timeout", "timeout"), ("imessage_permission_denied", "imessage_permission_denied"), ("PRIVATE_FIXTURE", "delivery_failed")])
+def test_installed_failure_has_safe_error_and_action(tmp_path, error, expected):
+    import plistlib
+    from agent_storage_guard import delivery
+    app = tmp_path / "sender.app"
+    binary = app / "Contents/MacOS/Agent Storage Guard"
+    binary.parent.mkdir(parents=True)
+    result = {"destination":"imessage", "synthetic":True, "acceptance":"failed", "receipt":"not_observed", "code":error}
+    binary.write_text(f"#!{sys.executable}\nimport sys\nprint({json.dumps(result)!r})\nsys.exit(1)\n")
+    binary.chmod(0o700)
+    state = tmp_path / "state"
+    (app / "Contents/Info.plist").write_bytes(plistlib.dumps({"ASGMonitorState":str(state)}))
+    receipt, status = delivery.installed_test(app, "imessage", state)
+    assert status == 1
+    assert receipt["code"] == expected
+    assert "PRIVATE_FIXTURE" not in json.dumps(receipt)
+    assert receipt["next_action"] != "Confirm receipt independently; run monitor delivery-check for redacted gate details if delivery failed."

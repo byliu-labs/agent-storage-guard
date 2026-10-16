@@ -1,7 +1,6 @@
 """Opt-in Messages automation, with private input and bounded process lifetime."""
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
@@ -25,27 +24,30 @@ def check(settings: dict) -> None:
 
 
 _SCRIPT = r"""
-function deliver(input) {
-    try {
-        var messages = Application('Messages');
-        var accounts = messages.accounts.whose({serviceType: 'iMessage'})();
-        var account = null;
-        for (var i = 0; i < accounts.length; i++) {
-            if (accounts[i].enabled() && accounts[i].connectionStatus() === 'connected') {
-                account = accounts[i];
-                break;
-            }
-        }
-        if (account === null) return 'service_unavailable';
-        var participant = account.participants.byName(input.recipient);
-        messages.send(input.text, {to: participant});
-        return 'accepted';
-    } catch (error) {
-        return Number(error.errorNumber) === -1743 ? 'permission_denied' : 'failed';
-    }
-}
-deliver(INPUT);
+on deliver(recipientHandle, alertText)
+    try
+        tell application "Messages"
+            set candidates to (every account whose service type is iMessage)
+            repeat with candidate in candidates
+                if (enabled of candidate) and ((connection status of candidate) is connected) then
+                    send alertText to participant recipientHandle of candidate
+                    return "accepted"
+                end if
+            end repeat
+        end tell
+        return "service_unavailable"
+    on error errorText number errorNumber
+        if errorNumber is -1743 then return "permission_denied"
+        return "failed"
+    end try
+end deliver
+deliver(INPUT)
 """
+
+
+def _literal(value: str) -> str:
+    """AppleScript string data; never interpolate unquoted source or use argv."""
+    return '"' + value.replace('\\', '\\\\').replace('"', '\\"').replace('\r', '\\r').replace('\n', '\\n').replace('\t', '\\t') + '"'
 
 
 def send(settings: dict, text: str) -> None:
@@ -55,10 +57,10 @@ def send(settings: dict, text: str) -> None:
             or any(0xD800 <= ord(c) <= 0xDFFF for c in text)
             or len(text.encode("utf-8")) > 16000):
         raise DeliveryError("invalid_payload")
-    data = json.dumps({"recipient": settings["recipient"], "text": text}, ensure_ascii=True)
-    script = _SCRIPT.replace("deliver(INPUT);", "deliver(" + data + ");")
+    data = _literal(settings["recipient"]) + ", " + _literal(text)
+    script = _SCRIPT.replace("deliver(INPUT)", "deliver(" + data + ")")
     try:
-        result = subprocess.run([_OSASCRIPT, "-l", "JavaScript", "-"], input=script,
+        result = subprocess.run([_OSASCRIPT, "-"], input=script,
                                 capture_output=True, text=True, timeout=_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
         raise DeliveryError("timeout", True) from None

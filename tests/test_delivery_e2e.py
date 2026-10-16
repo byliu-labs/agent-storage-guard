@@ -75,9 +75,9 @@ def test_failed_destination_does_not_suppress_other_and_restart_retries_only_fai
             assert delivery.dispatch(store, config, [alert], {}, snapshot, now + 32)
         assert [path for path, _ in requests] == ["/first", "/second", "/first"]
         for _, body in requests:
-            payload = json.loads(body["content"]["text"])
-            assert payload["free_gib"] == 1.0
-            assert payload["severity"] == "urgent"
+            text = body["content"]["text"]
+            assert text.startswith("CI monitor — URGENT")
+            assert "Free space: 1.0 GiB" in text
             assert str(tmp_path) not in json.dumps(body)
 
 
@@ -91,12 +91,16 @@ def test_cli_test_send_is_synthetic_and_does_not_acknowledge_real_alerts(tmp_pat
         assert result["acceptance"] == "accepted"
         assert result["receipt"] == "not_observed"
         assert result["synthetic"] is True
-        payload = json.loads(requests[0][1]["content"]["text"])
-        assert payload["free_gib"] == 8.0
-        assert payload["growth_gib"] == 3.0
-        assert payload["memory_pressure"] == "critical"
-        assert payload["coverage"] == "partial"
-        assert payload["next_action"].startswith("Synthetic test only; no host measurement was taken.")
+        text = requests[0][1]["content"]["text"]
+        assert text.startswith("CI monitor — TEST ALERT")
+        assert "Sample values • no host measurement" in text
+        assert "Free space: 8.0 GiB" in text
+        assert "Storage growth: +3.0 GiB" in text
+        assert "Memory pressure: Critical" in text
+        assert "Scan coverage: Partial" in text
+        assert "Next step:" in text
+        assert "Synthetic test only; no host measurement was taken." in text
+        assert "measured_at" not in text
         with MonitorStore(directory) as store:
             assert store.get_value("delivery_state")["first"]["delivered"] == {}
             assert not store.latest_capacity()

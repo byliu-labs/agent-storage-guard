@@ -16,6 +16,7 @@ PROVIDERS = {"native", "feishu", "imessage"}
 _NAME = re.compile(r"[a-z][a-z0-9-]{0,39}\Z")
 _ENV = re.compile(r"[A-Z][A-Z0-9_]{0,79}\Z")
 _GATES = {
+    "timeout": "Delivery timed out; receipt is uncertain. For iMessage, open Messages in the logged-in desktop session, finish any Automation approval, then deliberately rerun test-send --installed. Avoid repeated retries until checking for receipt.",
     "imessage_platform_unavailable": "Use a macOS user session with Messages and osascript available.",
     "imessage_permission_denied": "In System Settings > Privacy & Security > Automation, allow the installed Agent Storage Guard sender to control Messages; rerun test-send --installed.",
     "imessage_service_unavailable": "Sign in to Messages with an iMessage account in the monitored Mac's user session; verify a blue-bubble conversation manually.",
@@ -141,6 +142,26 @@ def remote_payload(alert: dict, snapshot: dict, config: dict, *, synthetic: bool
             "coverage": coverage, "next_action": action}
 
 
+def remote_text(payload: dict, *, synthetic: bool = False) -> str:
+    """Present only the reconstructed allowlist, never the private alert itself."""
+    heading = "TEST ALERT" if synthetic else payload["severity"].upper()
+    lines = [f"{payload['label']} — {heading}"]
+    if synthetic:
+        lines.append("Sample values • no host measurement")
+    measured = payload["measured_at"]
+    try:
+        stamp = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(measured)) if measured is not None else "Unavailable"
+    except (OverflowError, ValueError, OSError):
+        stamp = "Unavailable"
+    free, growth = payload["free_gib"], payload["growth_gib"]
+    lines.extend(["", f"Free space: {free:.1f} GiB" if free is not None else "Free space: Unavailable",
+                  f"Storage growth: +{growth:.1f} GiB" if growth is not None else "Storage growth: Unavailable",
+                  f"Memory pressure: {payload['memory_pressure'].capitalize()}",
+                  f"Scan coverage: {payload['coverage'].capitalize()}", f"Measured: {stamp}",
+                  "", "Next step: " + payload["next_action"]])
+    return "\n".join(lines)
+
+
 def _send(spec: dict, alert: dict, snapshot: dict, config: dict, app: str | None, state: Path, *, synthetic: bool = False) -> None:
     from . import notifications
     from .delivery_transports import DeliveryError, send
@@ -150,7 +171,7 @@ def _send(spec: dict, alert: dict, snapshot: dict, config: dict, app: str | None
         except (RuntimeError, OSError, subprocess.SubprocessError):
             raise DeliveryError("native_unavailable", True) from None
     else:
-        send(spec["provider"], settings(spec), json.dumps(remote_payload(alert, snapshot, config, synthetic=synthetic), allow_nan=False))
+        send(spec["provider"], settings(spec), remote_text(remote_payload(alert, snapshot, config, synthetic=synthetic), synthetic=synthetic))
 
 
 def _failed(entry: dict, error, now: float, level: str) -> None:
@@ -252,6 +273,11 @@ def installed_test(app: Path, destination: str, expected_state: Path) -> tuple[d
             or (result.returncode == 0) != (receipt["acceptance"] == "accepted")):
         raise RuntimeError("installed_helper_failed; no valid acceptance receipt")
     # Do not forward arbitrary helper stdout, stderr, raw errors or extra fields.
-    return {"destination": destination, "synthetic": True,
+    safe = {"destination": destination, "synthetic": True,
             "acceptance": receipt["acceptance"], "receipt": "not_observed",
-            "next_action": "Confirm receipt independently; run monitor delivery-check for redacted gate details if delivery failed."}, int(result.returncode != 0)
+            "next_action": "Confirm receipt independently on the recipient device."}
+    if receipt["acceptance"] == "failed":
+        error = receipt.get("code")
+        safe["code"] = error if isinstance(error, str) and error in _GATES else "delivery_failed"
+        safe["next_action"] = _GATES.get(safe["code"], "Run monitor delivery-check for redacted provider details; correct the gate before retrying.")
+    return safe, int(result.returncode != 0)

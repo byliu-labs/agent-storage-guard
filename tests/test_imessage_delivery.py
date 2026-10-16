@@ -17,7 +17,7 @@ def native(monkeypatch, tmp_path):
     helper = tmp_path / "controlled-native"
     helper.write_text("#!" + sys.executable + "\n" + """import sys
 script = sys.stdin.read()
-assert sys.argv[1:] == ['-l', 'JavaScript', '-']
+assert sys.argv[1:] == ['-']
 assert 'operator@example.invalid' in script
 assert 'Synthetic alert' in script
 print('accepted')
@@ -80,58 +80,23 @@ def test_invalid_message_is_redacted(native, text):
         imessage.send({"recipient":"operator@example.invalid"}, text)
 
 
-@pytest.mark.skipif(__import__('sys').platform != 'darwin', reason='JXA syntax boundary requires macOS')
-@pytest.mark.parametrize("service,permission,enabled,connection,expected", [("iMessage",False,True,"connected","accepted"),("SMS",False,True,"connected","service_unavailable"),("RCS",False,True,"connected","service_unavailable"),("iMessage",True,True,"connected","permission_denied"),("iMessage",False,False,"connected","service_unavailable"),("iMessage",False,True,"disconnected","service_unavailable")])
-def test_jxa_contract_against_controlled_service_without_accessing_messages(service, permission, enabled, connection, expected):
-    import json
+@pytest.mark.skipif(__import__('sys').platform != 'darwin', reason='AppleScript compiler requires macOS')
+def test_native_script_compiles_against_real_messages_dictionary(tmp_path):
     import subprocess
-    # Replace the application bridge before executing the script: no real app access.
-    mock = """
-var controlledApplication = function(name) {
-    if (name !== 'Messages') throw Error('Unexpected app');
-    return {
-        accounts: {whose: function(query) {
-            if (query.serviceType !== 'iMessage') throw Error('Unrestricted service');
-            return function() {
-                if (SERVICE !== 'iMessage') return [];
-                return [{enabled:function(){return ENABLED;}, connectionStatus:function(){return CONNECTION;},
-                         participants:{byName:function(recipient){return recipient;}}}];
-            };
-        }},
-        send: function(text, options) {
-            if (DENIED) throw {errorNumber:-1743};
-            if (text !== 'Synthetic alert' || options.to !== 'operator@example.invalid') throw Error('Unsafe data');
-        }
-    };
-};
-""".replace('SERVICE',json.dumps(service)).replace('DENIED',json.dumps(permission)).replace('ENABLED',json.dumps(enabled)).replace('CONNECTION',json.dumps(connection))
-    script = imessage._SCRIPT.replace("Application('Messages')", "controlledApplication('Messages')").replace('deliver(INPUT);','deliver({recipient:"operator@example.invalid",text:"Synthetic alert"});')
-    result = subprocess.run(['/usr/bin/osascript','-l','JavaScript','-'],input=mock+script,capture_output=True,text=True,timeout=5)
+    script = imessage._SCRIPT.replace('deliver(INPUT)', 'deliver("operator@example.invalid", "Synthetic alert")')
+    result = subprocess.run(['/usr/bin/osacompile', '-o', str(tmp_path / 'sender.scpt'), '-'], input=script, capture_output=True, text=True, timeout=5)
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == expected
 
 
-@pytest.mark.skipif(__import__('sys').platform != 'darwin', reason='JXA syntax boundary requires macOS')
-def test_message_code_is_data_not_executable(native, monkeypatch):
-    import json
+@pytest.mark.skipif(__import__('sys').platform != 'darwin', reason='AppleScript boundary requires macOS')
+def test_message_code_is_data_not_executable():
     import subprocess
-    real_run = subprocess.run
-    text = '\"}); throw Error(\"injected\"); // \n \u2028'
-    expected = json.dumps(text)
-    bridge = """var controlledApplication = function(name) {return {
-      accounts:{whose:function(query){return function(){return [{
-        enabled:function(){return true;},connectionStatus:function(){return 'connected';},
-        participants:{byName:function(recipient){return recipient;}}
-      }];};}},send:function(text,options){
-        if(text !== EXPECTED) throw Error('mismatch');
-      }};};
-""".replace('EXPECTED', expected)
-    def controlled(args, **kwargs):
-        assert args[1:] == ['-l','JavaScript','-']
-        kwargs['input'] = bridge + kwargs['input'].replace("Application('Messages')", "controlledApplication('Messages')")
-        return real_run(['/usr/bin/osascript','-l','JavaScript','-'], **kwargs)
-    monkeypatch.setattr(imessage.subprocess,'run',controlled)
-    imessage.send({'recipient':'operator@example.invalid'},text)
+    text = '\" & error \"injected\" & \"\n\r\t\\ Unicode: 雪'
+    # Evaluate only a literal, never the Messages bridge or a send command.
+    script = 'return ' + imessage._literal(text)
+    result = subprocess.run(['/usr/bin/osascript', '-'], input=script.encode(), capture_output=True, timeout=5)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.decode().rstrip('\n') == text
 
 
 def test_nonzero_native_process_never_accepts_or_exposes_diagnostics(native):

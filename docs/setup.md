@@ -95,6 +95,12 @@ permission. This send-only integration does not use Accessibility, Screen Record
 Messages database access, an inbound server or Full Disk Access.
 [Apple's Automation instructions](https://support.apple.com/guide/mac-help/mchl108e1718/mac).
 
+Installed tests now show a safe error code and a specific next action on failure.
+For `timeout`, open Messages in the logged-in desktop session and finish any pending
+Automation prompt. Check the recipient device before retrying: a timeout leaves
+receipt uncertain. Use `monitor delivery-check` to review saved redacted health.
+A timeout alone does not prove permission denial.
+
 The first test can time out while approval is pending; approve and rerun it.
 Native execution is bounded to ten seconds and its child is reaped. Permission,
 service and other failures appear as redacted gates in `delivery-check`. Installed
@@ -124,3 +130,27 @@ and tests use synthetic data. Do not attach local state to the PR. See
 
 These opt-in setup/test commands do not authorize cleanup, database changes,
 process termination or inventory uploads.
+
+## Readable remote alerts
+
+Feishu and iMessage show a short text summary, for example:
+
+```text
+Storage monitor — TEST ALERT
+Sample values • no host measurement
+
+Free space: 8.0 GiB
+Storage growth: +3.0 GiB
+Memory pressure: Critical
+Scan coverage: Partial
+Measured: 2026-01-01 00:00 UTC
+
+Next step: Synthetic test only; no host measurement was taken. Confirm receipt in this test group; review the private report for real conditions.
+```
+
+Real alerts use their severity in the heading. Missing measurements say
+`Unavailable`; partial and stale coverage remain explicit. Presentation uses the
+same strict outbound allowlist; private paths and alert prose are never included.
+After updating, rerun `uv tool install --reinstall .` and `monitor install` before
+an explicit installed test. Existing Keychain credentials remain in place; setup
+does not need to be repeated.
