@@ -34,10 +34,19 @@ Final local validation: `uv run pytest -q` passed 377 tests;
 `uv run pytest --collect-only -q` collected 377 without errors.
 `git diff --check` passed.
 
-## Remaining owner verification
+## Authorized live verification
+
+After the code commit `38fbc4070f62e378df49b4ad756b18ec59348819`, the tool was
+reinstalled and the helper staged without activation. The owner authorized one
+synthetic iMessage test through the installed sender, using only the selected
+stored credential. It returned `accepted`, and the owner independently confirmed
+receipt of the readable test alert. No recipient, credential, private config or
+message screenshot is retained in this receipt. No additional live sends occurred.
+
+## Limits
 
 A successful no-send account check does not prove the installed responsible app's
 Automation or Keychain access, nor native send acceptance or destination receipt.
-An explicitly authorized installed test and independently observed receipt are
-still required. A timeout leaves receipt uncertain: check before retrying. No
+The live verification above establishes installed acceptance and owner-observed
+iMessage receipt for that test, rather than a guarantee of future delivery. A timeout leaves receipt uncertain: check before retrying. No
 permissions, account settings or activation were changed during this work.
