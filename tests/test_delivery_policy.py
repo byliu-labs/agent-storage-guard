@@ -48,3 +48,18 @@ def test_malformed_destination_configuration_is_rejected_without_echoing_values(
     with pytest.raises(ValueError) as result:
         delivery.validate_config({"destinations": [spec]})
     assert "PRIVATE" not in str(result.value)
+
+
+def test_imessage_health_has_actionable_automation_gate_without_account_data(monkeypatch):
+    from agent_storage_guard import imessage_delivery
+    monkeypatch.setattr(imessage_delivery.sys, "platform", "darwin")
+    monkeypatch.setattr(imessage_delivery.os, "access", lambda *args: True)
+    spec = {"id": "personal", "provider": "imessage", "settings_env": "ASG_SYNTHETIC_IMESSAGE"}
+    monkeypatch.setenv(spec["settings_env"], '{"recipient":"private-fixture@example.invalid"}')
+    ledger = {"personal": {"binding": ["imessage", spec["settings_env"], None], "delivered": {},
+        "health": {"acceptance": "failed", "code": "imessage_permission_denied"}}}
+    result, code = delivery.check_configuration({"destinations": [spec]}, ledger)
+    assert code != 0
+    assert "Automation" in result["destinations"][0]["gate"]
+    assert "Messages" in result["destinations"][0]["gate"]
+    assert "private-fixture" not in json.dumps(result)

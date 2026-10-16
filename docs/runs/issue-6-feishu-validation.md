@@ -1,5 +1,9 @@
 # Issue 6: Feishu-first implementation evidence
 
+Historical receipt for the initial Feishu commit `47e8950`. The subsequent
+[setup and iMessage receipt](issue-6-setup-imessage-validation.md) describes the
+expanded implementation; the scope and counts below belong to the earlier snapshot.
+
 Scope: Feishu/Lark group bots and native delivery compatibility, following the
 request to build Feishu first. Base: `main` at
 `6ce51c14a0d9d4605bf4a247161e2ae6f571c4cf`. This is not completion of issue #6;

@@ -5,15 +5,25 @@
 MONITOR_SOURCE = r'''
 func runMonitor() -> Never {
     let args = CommandLine.arguments
-    guard args.count == 3, ["tick", "scan"].contains(args[2]),
+    guard args.count >= 3,
           let cli = Bundle.main.object(forInfoDictionaryKey: "ASGMonitorCLI") as? String,
           let state = Bundle.main.object(forInfoDictionaryKey: "ASGMonitorState") as? String else {
-        fputs("Expected --monitor tick|scan with an installed monitor configuration.\n", stderr)
+        fputs("Expected --monitor tick|scan or --test-send destination expected-state with an installed monitor configuration.\n", stderr)
         exit(64)
     }
+    let arguments: [String]
+    if args.count == 3 && args[1] == "--monitor" && ["tick", "scan"].contains(args[2]) {
+        arguments = ["--state", state, "monitor", args[2], "--notify"]
+    } else if args.count == 4 && args[1] == "--test-send" && args[2].range(of: "\\A[a-z][a-z0-9-]{0,39}\\z", options: .regularExpression) != nil {
+        guard args[3] == state else {
+            fputs("Installed monitor state does not match the requested state.\n", stderr)
+            exit(64)
+        }
+        arguments = ["--state", state, "monitor", "test-send", "--destination", args[2]]
+    } else { fputs("Invalid monitor action or destination.\n", stderr); exit(64) }
     let worker = Process()
     worker.executableURL = URL(fileURLWithPath: cli)
-    worker.arguments = ["--state", state, "monitor", args[2], "--notify"]
+    worker.arguments = arguments
     worker.terminationHandler = { process in
         exit(process.terminationReason == .exit ? process.terminationStatus : 128 + process.terminationStatus)
     }
@@ -30,7 +40,7 @@ func runMonitor() -> Never {
     catch { fputs("Monitor launch failed: \(error)\n", stderr); exit(74) }
     withExtendedLifetime(signals) { dispatchMain() }
 }
-if CommandLine.arguments.dropFirst().first == "--monitor" { runMonitor() }
+if let mode = CommandLine.arguments.dropFirst().first, ["--monitor", "--test-send"].contains(mode) { runMonitor() }
 '''
 
 # Original artwork, rendered locally with Apple's frameworks. No downloaded

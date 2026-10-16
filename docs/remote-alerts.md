@@ -1,11 +1,12 @@
-# Feishu and Lark alerts
+# Feishu, Lark and iMessage alerts
 
-The first implementation slice of [issue #6](https://github.com/byliu-labs/agent-storage-guard/issues/6)
-adds Feishu/Lark group-bot delivery alongside existing native notifications.
-Slack, WhatsApp and iMessage remain required by that issue and are not implemented
-in this slice. There is no automatic cleanup or change to existing CI commands.
+This implementation of [issue #6](https://github.com/byliu-labs/agent-storage-guard/issues/6)
+adds Feishu/Lark group bots and macOS iMessage alongside native notifications.
+Slack and WhatsApp remain required and unimplemented. There is no automatic cleanup
+or change to existing CI commands. Start with [private setup](setup.md) for hidden
+credential capture, installed-identity tests and explicit activation.
 
-## Configure a destination
+## Feishu/Lark prerequisites and advanced configuration
 
 Create a dedicated test group and add a custom bot using the
 [Feishu custom-bot guide](https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot)
@@ -56,6 +57,10 @@ For Lark, use the bot's `https://open.larksuite.com/open-apis/bot/v2/hook/...`
 URL with the same `feishu` provider. Omit `signing_secret` only when the bot does
 not require signing. Only these two HTTPS hosts and bot endpoint paths are accepted;
 redirects are refused. Credential JSON accepts only the fields above.
+
+`monitor setup --provider feishu` automates Keychain item creation and the config
+reference, requiring signing. The manual form remains available for existing
+credential mechanisms; guided setup avoids secrets in shell commands.
 
 Keychain retrieval is restricted to the named service and fixed account. It never
 unlocks a keychain or opens a permission dialog. An inaccessible, locked or
@@ -119,13 +124,23 @@ or public receipts. No local `file://` link is presented as remotely accessible.
 Detailed inventory remains in the private local report; transfer it only through
 an independently authorized channel when asking an agent to audit it.
 
+iMessage uses the same payload allowlist. Its settings have exactly one field,
+`recipient`, containing a phone number or email in Keychain or an existing secure
+environment mechanism. Guided setup saves it privately. The adapter selects a
+connected iMessage account using the Messages scripting dictionary, without reading
+chat history or Contacts. The account's normal sender identity remains visible.
+A signed-in GUI session and owner-approved Automation access are required; see
+[setup](setup.md). No SMS/RCS fallback is implemented. Recipient/text travel over
+stdin, not argv or files; native execution has a ten-second timeout with teardown.
+
 The existing SQLite history also holds bounded delivery state for at most eight
-destinations. Each destination acknowledges an alert only after a valid application
-success response (`code: 0`, or compatible `StatusCode: 0`). HTTP 200 alone is not
-enough. A failed group cannot suppress another group. Existing severity escalation,
+destinations. Feishu acknowledges only a valid application success response
+(`code: 0`, or compatible `StatusCode: 0`); HTTP 200 alone is not enough. iMessage acknowledges
+only native scripting acceptance. Neither proves recipient receipt. A failed
+destination cannot suppress another. Existing severity escalation,
 native cooldowns on upgrade and cooldowns across restarts are preserved.
 
-Each attempt uses a five-second socket timeout, a 64-KiB response cap and an
+Each Feishu attempt uses a five-second socket timeout, a 64-KiB response cap and an
 eight-second total request deadline. A separate HTTP worker receives its input
 through a private pipe; on deadline it is killed and reaped, including when a
 provider slowly drips response bytes. Credentials never enter its command arguments.
@@ -152,5 +167,8 @@ The outstanding deployment gates are an authorized dedicated test group, bot
 webhook/signing settings available to the installed process, permitted unattended
 Keychain/session access where selected, an explicitly authorized real test send,
 and independent observation in that group. No real Feishu/Lark receipt is claimed
-without those steps. Slack, WhatsApp and iMessage need their own implementation
-and provider-specific validation before issue #6 can be closed.
+without those steps. iMessage additionally requires sign-in, approved Automation
+access for the installed identity and independently observed receipt. Current native
+tests use a controlled bridge/executable; real iMessage delivery is not verified.
+Slack and WhatsApp still require implementation and provider-specific validation
+before issue #6 can be closed.

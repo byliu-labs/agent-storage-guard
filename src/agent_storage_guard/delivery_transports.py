@@ -25,6 +25,10 @@ class DeliveryError(RuntimeError):
 
 def check(provider: str, settings: dict) -> None:
     """Validate locally without contacting a provider or requesting permissions."""
+    if provider == "imessage":
+        from .imessage_delivery import check as check_imessage
+        check_imessage(settings)
+        return
     if provider != "feishu" or not isinstance(settings, dict):
         raise DeliveryError("invalid_configuration")
     value = settings.get("webhook_url")
@@ -141,6 +145,10 @@ def _worker() -> None:
 
 def send(provider: str, settings: dict, text: str) -> None:
     """Return only after provider acceptance; this does not prove user receipt."""
+    if provider == "imessage":
+        from .imessage_delivery import send as send_imessage
+        send_imessage(settings, text)
+        return
     check(provider, settings)
     if (not isinstance(text, str) or not text
             or any(0xD800 <= ord(c) <= 0xDFFF for c in text)

@@ -31,7 +31,7 @@ Database directory accounting measures disk pressure only. A large directory, ol
 
 ## Configure delivery, then activate explicitly
 
-See [remote alert setup](remote-alerts.md) for configuration, health checks and deliberate test sends for Feishu/Lark and native notifications. This first slice does not yet implement Slack, WhatsApp or iMessage. Checking configuration must not send a message. Review authentication, recipient, session, OS permission and possible cost prerequisites before a real test. Provider acceptance and independently observed receipt are different evidence.
+Start with [private setup](setup.md) for hidden Keychain capture, health checks and installed-identity test sends for Feishu/Lark and iMessage. Native notifications remain supported. Slack and WhatsApp are not yet implemented. Checking configuration must not send a message. Review authentication, recipient, session, OS permission and possible cost prerequisites before a real test. Provider acceptance and independently observed receipt are different evidence; iMessage requires a working graphical user session.
 
 Use the installed CLI rather than an ephemeral development executable. Stage the two monitor jobs first:
 

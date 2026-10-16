@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import plistlib
 from pathlib import Path
 import re
 import shutil
@@ -11,9 +12,16 @@ import sys
 import subprocess
 import time
 
-PROVIDERS = {"native", "feishu"}
+PROVIDERS = {"native", "feishu", "imessage"}
 _NAME = re.compile(r"[a-z][a-z0-9-]{0,39}\Z")
 _ENV = re.compile(r"[A-Z][A-Z0-9_]{0,79}\Z")
+_GATES = {
+    "imessage_platform_unavailable": "Use a macOS user session with Messages and osascript available.",
+    "imessage_permission_denied": "In System Settings > Privacy & Security > Automation, allow the installed Agent Storage Guard sender to control Messages; rerun test-send --installed.",
+    "imessage_service_unavailable": "Sign in to Messages with an iMessage account in the monitored Mac's user session; verify a blue-bubble conversation manually.",
+    "imessage_failed": "Verify the recipient can receive iMessage in Messages; rerun the installed test and confirm receipt independently.",
+    "keychain_unavailable": "Unlock the selected Keychain and authorize the installed runtime for this item; rerun delivery-check.",
+}
 
 
 def destinations(config: dict) -> list[dict]:
@@ -81,7 +89,7 @@ def check_configuration(config: dict, health: dict) -> tuple[dict, int]:
                   "receipt": "not_observed", "gate": "Run explicit test-send; independently confirm receipt."}
         if "code" in previous:
             result["last_error"] = previous["code"]
-            result["gate"] = "Review provider authentication and policy; deliberately test-send after correction."
+            result["gate"] = _GATES.get(previous["code"], "Review provider authentication and policy; deliberately test-send after correction.")
         if "attempted_at" in previous:
             result["attempted_at"] = previous["attempted_at"]
         if entry.get("retry_at"):
@@ -93,7 +101,7 @@ def check_configuration(config: dict, health: dict) -> tuple[dict, int]:
                 raise DeliveryError("native_unavailable")
         except DeliveryError as error:
             result.update(configuration="blocked", code=error.code,
-                          gate="Supply valid provider settings using the configured credential reference; unlock or authorize Keychain manually if needed; rerun delivery-check.")
+                          gate=_GATES.get(error.code, "Supply valid provider settings using the configured credential reference; rerun delivery-check."))
         results.append(result)
     return {"destinations": results}, int(any(r["configuration"] == "blocked" or r["acceptance"] == "failed" for r in results))
 
@@ -219,3 +227,31 @@ def test_send(store, config: dict, destination: str) -> tuple[dict, int]:
     ledger[destination] = entry
     store.set_value("delivery_state", ledger)
     return {"destination": destination, "synthetic": True, **entry["health"]}, code
+
+
+def installed_test(app: Path, destination: str, expected_state: Path) -> tuple[dict, int]:
+    """Deliberate send under the same responsible app as scheduled jobs."""
+    from .ownership import no_symlinks
+    no_symlinks(app)
+    expected = str(expected_state.absolute())
+    try:
+        manifest = plistlib.loads((app / "Contents/Info.plist").read_bytes())
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        raise RuntimeError("installed_helper_invalid; rerun monitor install for this state") from None
+    if not isinstance(manifest, dict) or manifest.get("ASGMonitorState") != expected:
+        raise RuntimeError("installed_helper_state_mismatch; rerun monitor install for this state")
+    try:
+        result = subprocess.run([str(app / "Contents/MacOS/Agent Storage Guard"),
+                                 "--test-send", destination, expected], capture_output=True, text=True, timeout=30)
+        receipt = json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError, RecursionError):
+        raise RuntimeError("installed_helper_failed; check the installed identity and retry after approving required access") from None
+    if (not isinstance(receipt, dict) or receipt.get("destination") != destination
+            or receipt.get("synthetic") is not True or receipt.get("receipt") != "not_observed"
+            or receipt.get("acceptance") not in ("accepted", "failed")
+            or (result.returncode == 0) != (receipt["acceptance"] == "accepted")):
+        raise RuntimeError("installed_helper_failed; no valid acceptance receipt")
+    # Do not forward arbitrary helper stdout, stderr, raw errors or extra fields.
+    return {"destination": destination, "synthetic": True,
+            "acceptance": receipt["acceptance"], "receipt": "not_observed",
+            "next_action": "Confirm receipt independently; run monitor delivery-check for redacted gate details if delivery failed."}, int(result.returncode != 0)

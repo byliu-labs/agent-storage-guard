@@ -7,6 +7,7 @@ only a local report or Activity Monitor. No dependency download is performed.
 from __future__ import annotations
 
 import os
+import hashlib
 from pathlib import Path
 import plistlib
 import shutil
@@ -124,6 +125,22 @@ application.run()
 '''
 
 
+def _reusable_app(app: Path, manifest: dict) -> bool:
+    paths = [app, app / "Contents", app / "Contents/Info.plist", app / "Contents/MacOS",
+             app / "Contents/MacOS/Agent Storage Guard"]
+    try:
+        if any(path.is_symlink() or path.stat().st_uid != os.getuid() for path in paths):
+            return False
+        if not paths[-1].is_file() or not os.access(paths[-1], os.X_OK):
+            return False
+        if plistlib.loads(paths[2].read_bytes()) != manifest:
+            return False
+        return subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)],
+                              capture_output=True, timeout=20).returncode == 0
+    except (OSError, ValueError, plistlib.InvalidFileException, subprocess.SubprocessError):
+        return False
+
+
 def prepare_app(directory: Path, report_path: Path, executable: Path | None = None,
                 state: Path | None = None) -> Path:
     """Build a private, ad-hoc signed helper. Preserve a replaced bundle for rollback."""
@@ -137,6 +154,19 @@ def prepare_app(directory: Path, report_path: Path, executable: Path | None = No
     if directory.is_symlink() or directory.stat().st_uid != os.getuid():
         raise RuntimeError("notification app directory must be owned and must not be a symlink")
     app = directory / "Agent Storage Guard.app"
+    source_text = SWIFT_SOURCE.replace("// MONITOR_LAUNCHER", MONITOR_SOURCE)
+    manifest = {"CFBundleIdentifier": BUNDLE_ID, "CFBundleName": "Agent Storage Guard",
+                "CFBundleDisplayName": "Agent Storage Guard", "CFBundleExecutable": "Agent Storage Guard",
+                "CFBundlePackageType": "APPL", "CFBundleVersion": "1", "LSUIElement": True,
+                "NSHighResolutionCapable": True, "ASGReportPath": str(report_path.absolute()),
+                "CFBundleIconFile": "StorageGuard.icns",
+                "NSAppleEventsUsageDescription": "Send explicitly configured storage alerts through Messages."}
+    if executable is not None and state is not None:
+        manifest.update(ASGMonitorCLI=str(executable.absolute()), ASGMonitorState=str(state.absolute()))
+    digest = hashlib.sha256(source_text.encode() + ICON_SOURCE.encode() + plistlib.dumps(manifest)).hexdigest()
+    manifest["ASGBuildDigest"] = digest
+    if _reusable_app(app, manifest):
+        return app
     with tempfile.TemporaryDirectory(prefix=".notification-build-", dir=directory) as temporary:
         root = Path(temporary)
         staged = root / app.name
@@ -144,16 +174,9 @@ def prepare_app(directory: Path, report_path: Path, executable: Path | None = No
         binary = contents / "MacOS/Agent Storage Guard"
         binary.parent.mkdir(parents=True, mode=0o700)
         source = root / "Alert.swift"
-        source.write_text(SWIFT_SOURCE.replace("// MONITOR_LAUNCHER", MONITOR_SOURCE))
+        source.write_text(source_text)
         subprocess.run([compiler, "-O", str(source), "-o", str(binary)],
                        check=True, capture_output=True, text=True, timeout=120)
-        manifest = {"CFBundleIdentifier": BUNDLE_ID, "CFBundleName": "Agent Storage Guard",
-                    "CFBundleDisplayName": "Agent Storage Guard", "CFBundleExecutable": "Agent Storage Guard",
-                    "CFBundlePackageType": "APPL", "CFBundleVersion": "1", "LSUIElement": True,
-                    "NSHighResolutionCapable": True, "ASGReportPath": str(report_path.absolute()),
-                    "CFBundleIconFile": "StorageGuard.icns"}
-        if executable is not None and state is not None:
-            manifest.update(ASGMonitorCLI=str(executable.absolute()), ASGMonitorState=str(state.absolute()))
         resources = contents / "Resources"
         resources.mkdir(mode=0o700)
         iconset = root / "StorageGuard.iconset"

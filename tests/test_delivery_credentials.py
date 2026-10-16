@@ -13,6 +13,16 @@ class Security:
         self.calls = []
         self.restore_status = 0
         self.free_status = 0
+        self.add_status = 0
+
+    def SecKeychainAddGenericPassword(self, keychain, service_length, service,
+                                     account_length, account, length, data, item):
+        assert keychain is None and item is None
+        assert service[:service_length] == b"example.synthetic"
+        assert account[:account_length] == b"agent-storage-guard"
+        assert data[:length] == b'{"synthetic":"settings"}'
+        self.calls.append("add")
+        return self.add_status
 
     def SecKeychainGetUserInteractionAllowed(self, state):
         state._obj.value = 1
@@ -125,3 +135,25 @@ def test_previously_disabled_interaction_remains_disabled(monkeypatch):
     native.SecKeychainGetUserInteractionAllowed = lambda state: 0
     credentials.read_keychain("example.synthetic")
     assert native.calls[-1] == ("interaction", 0)
+
+
+def test_write_saves_exact_item_without_credential_arguments_or_prompts(monkeypatch):
+    native = boundary(monkeypatch)
+    credentials.write_keychain("example.synthetic", '{"synthetic":"settings"}')
+    assert native.calls == ["get", ("interaction", 0), "add", ("interaction", 1)]
+
+
+@pytest.mark.parametrize("status,code", [(-25299, "keychain_item_exists"), (-25308, "keychain_locked_or_denied")])
+def test_write_never_overwrites_existing_item_or_exposes_native_errors(monkeypatch, status, code):
+    native = boundary(monkeypatch)
+    native.add_status = status
+    with pytest.raises(RuntimeError, match="^" + code + "$"):
+        credentials.write_keychain("example.synthetic", '{"synthetic":"settings"}')
+    assert native.calls[-1] == ("interaction", 1)
+
+
+@pytest.mark.parametrize("value", [None, "", "\ud800", "x" * 16385], ids=["not-text", "empty", "surrogate", "oversized"])
+def test_invalid_write_payload_never_reaches_keychain(monkeypatch, value):
+    monkeypatch.setattr(credentials, "_security", lambda: pytest.fail("Keychain accessed"))
+    with pytest.raises(RuntimeError, match="^keychain_invalid_content$"):
+        credentials.write_keychain("example.synthetic", value)

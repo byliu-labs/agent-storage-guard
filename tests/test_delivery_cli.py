@@ -53,3 +53,19 @@ def test_test_send_requires_explicit_configured_destination(tmp_path):
     result = invoke(state, "test-send", "--destination", "absent")
     assert result.returncode != 0
     assert "unknown destination" in result.stderr
+
+
+def test_setup_refuses_noninteractive_input_without_creating_state(tmp_path):
+    state = tmp_path / "absent"
+    result = invoke(state, "setup", "--provider", "feishu")
+    assert result.returncode != 0
+    assert "setup_terminal_required" in result.stderr
+    assert not state.exists()
+
+
+def test_installed_test_requires_prepared_helper_and_never_falls_back(tmp_path):
+    state = tmp_path / "state"
+    configure(state, tmp_path / "workspaces")
+    result = invoke(state, "test-send", "--destination", "operations", "--installed")
+    assert result.returncode != 0
+    assert "installed_helper_missing" in result.stderr

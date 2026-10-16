@@ -2,7 +2,7 @@
 
 Keep coding agents from quietly filling your disk. Get local disk and memory alerts, see which folders are growing, and give test/build commands a shared temporary-storage budget.
 
-**Experimental · Local-only · No runtime Python dependencies**
+**Experimental · No hosted service · No runtime Python dependencies**
 
 | Component | What it does |
 | --- | --- |
@@ -70,7 +70,7 @@ For scheduled monitoring, after reviewing the configuration:
 agent-storage-guard monitor install --activate
 ```
 
-On macOS, capacity/memory checks default to every five minutes and folder scans to hourly. See [monitoring](docs/monitoring.md) for configuration, platform limits and migration from the earlier backup monitor. Unattended hosts can opt into [Feishu/Lark alerts](docs/remote-alerts.md) and [custom CI storage roots](docs/ci-host-monitoring.md).
+On macOS, capacity/memory checks default to every five minutes and folder scans to hourly. See [monitoring](docs/monitoring.md) for configuration, platform limits and migration from the earlier backup monitor. For private Feishu/Lark or iMessage alerts, start with the [guided setup commands](docs/setup.md); secrets and recipients are captured without echo and stored directly in Keychain. Unattended hosts can choose [custom CI storage roots](docs/ci-host-monitoring.md).
 
 ## Guard a command
 

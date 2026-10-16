@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ctypes
+from contextlib import contextmanager
 import sys
 import threading
 
@@ -18,6 +19,8 @@ def _security():
             ctypes.c_uint32, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32),
             ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p],
         "SecKeychainItemFreeContent": [ctypes.c_void_p, ctypes.c_void_p],
+        "SecKeychainAddGenericPassword": [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_char_p,
+            ctypes.c_uint32, ctypes.c_char_p, ctypes.c_uint32, ctypes.c_char_p, ctypes.c_void_p],
     }
     for name, arguments in signatures.items():
         function = getattr(framework, name)
@@ -43,8 +46,7 @@ def _read(native, service: bytes) -> str:
             raise RuntimeError("keychain_unavailable")
 
 
-def read_keychain(service: str) -> str:
-    """Read only the named service and fixed account; never unlock or prompt."""
+def _service(service: str) -> bytes:
     if not isinstance(service, str) or not service or "\x00" in service:
         raise RuntimeError("keychain_invalid_service")
     try:
@@ -53,6 +55,11 @@ def read_keychain(service: str) -> str:
         raise RuntimeError("keychain_invalid_service") from None
     if len(encoded) > 1024:
         raise RuntimeError("keychain_invalid_service")
+    return encoded
+
+
+@contextmanager
+def _interaction():
     if sys.platform != "darwin":
         raise RuntimeError("keychain_unavailable")
     try:
@@ -66,7 +73,34 @@ def read_keychain(service: str) -> str:
         try:
             if native.SecKeychainSetUserInteractionAllowed(0):
                 raise RuntimeError("keychain_unavailable")
-            return _read(native, encoded)
+            yield native
         finally:
             if native.SecKeychainSetUserInteractionAllowed(previous.value):
                 raise RuntimeError("keychain_unavailable")
+
+
+def read_keychain(service: str) -> str:
+    """Read only the named service and fixed account; never unlock or prompt."""
+    encoded = _service(service)
+    with _interaction() as native:
+        return _read(native, encoded)
+
+
+def write_keychain(service: str, value: str) -> None:
+    """Create one item through Security.framework; never overwrite or use argv."""
+    encoded = _service(service)
+    if not isinstance(value, str) or not value or len(value) > 16384:
+        raise RuntimeError("keychain_invalid_content")
+    try:
+        payload = value.encode("utf-8")
+    except UnicodeEncodeError:
+        raise RuntimeError("keychain_invalid_content") from None
+    if len(payload) > 16384:
+        raise RuntimeError("keychain_invalid_content")
+    with _interaction() as native:
+        status = native.SecKeychainAddGenericPassword(None, len(encoded), encoded,
+            len(_ACCOUNT), _ACCOUNT, len(payload), payload, None)
+        if status == -25299:
+            raise RuntimeError("keychain_item_exists")
+        if status:
+            raise RuntimeError("keychain_locked_or_denied")

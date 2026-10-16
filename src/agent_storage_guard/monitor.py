@@ -187,6 +187,11 @@ def read_status(directory: Path, config: dict) -> dict:
 def dispatch(args) -> int:
     directory = args.state / "monitor"
     action = args.monitor_action
+    if action == "setup":
+        from .delivery_setup import configure
+        payload = configure(directory, args.provider, args.destination or args.provider, args.root)
+        print(json.dumps(payload, indent=2))
+        return 0
     if directory.exists():
         ownership.private_directory(directory, create=False)
         rotate_logs(directory)
@@ -212,7 +217,15 @@ def dispatch(args) -> int:
                 else:
                     if args.destination not in {s["id"] for s in delivery.destinations(config)}:
                         raise ValueError("unknown destination; choose a configured destination id")
-                    payload, code = delivery.test_send(store, config, args.destination)
+                    if args.installed:
+                        app = store.get_value("notification_app")
+                        if not app:
+                            raise RuntimeError("installed_helper_missing; run 'monitor install' first")
+                    else:
+                        payload, code = delivery.test_send(store, config, args.destination)
+            if action == "test-send" and args.installed:
+                # The helper child needs policy.lock; never wait for it while holding that lock.
+                payload, code = delivery.installed_test(Path(app), args.destination, args.state)
             print(json.dumps(payload, indent=2))
             return code
         if action == "install":
