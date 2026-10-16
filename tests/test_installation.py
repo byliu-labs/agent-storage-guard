@@ -9,6 +9,23 @@ import pytest
 from agent_storage_guard import installation
 
 
+def test_native_jobs_run_through_named_app_and_keep_portable_cli_fallback(tmp_path):
+    home = tmp_path / "home"
+    app = tmp_path / "Agent Storage Guard.app"
+    binary = app / "Contents/MacOS/Agent Storage Guard"
+    binary.parent.mkdir(parents=True)
+    binary.write_text("#!/bin/sh\nexit 0\n")
+    binary.chmod(0o700)
+    cli = executable(tmp_path)
+    result = installation.install(home, cli, home / ".asg", app=app)
+    for command in ("tick", "scan"):
+        path = Path(result["manifest"]).parent / f"local.agent-storage-guard.{command}.plist"
+        job = plistlib.loads(path.read_bytes())
+        assert job["ProgramArguments"] == [str(binary), "--monitor", command]
+        assert job["AssociatedBundleIdentifiers"] == ["io.github.byliu-labs.agent-storage-guard"]
+    assert installation.service_plist(cli, home / ".asg", "tick")["ProgramArguments"][0] == str(cli)
+
+
 def executable(tmp_path: Path) -> Path:
     target = tmp_path / "guard"
     target.write_text("#!/bin/sh\nexit 0\n")

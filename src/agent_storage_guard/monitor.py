@@ -117,6 +117,7 @@ def snapshot(store, config: dict) -> dict:
                  "elapsed_seconds": capacity["time"] - baseline["time"],
                  "swap_delta_bytes": memory["swap_used_bytes"] - baseline["memory"]["swap_used_bytes"]}
     return {"time": time.time(), "report_path": str(store.state / "report.html"),
+            "reader_path": store.get_value("notification_app"), "platform": sys.platform,
             "config": config, "capacity": capacity, "memory_trend": trend,
             "scan": store.latest_scan() or {}, "alerts": store.get_value("active_alerts", []),
             "folder_history": store.report_history(), "capacity_history": capacity_history,
@@ -213,11 +214,12 @@ def dispatch(args) -> int:
             if not executable.is_file():
                 raise RuntimeError("install the CLI with 'uv tool install .' before scheduling")
             refresh(directory, config, probe=True, send=False)
-            app = notifications.prepare_app(directory, directory / "report.html") if sys.platform == "darwin" else None
+            app = notifications.prepare_app(Path.home() / "Applications", directory / "report.html", executable, args.state) if sys.platform == "darwin" else None
             with MonitorStore(directory) as store:
                 store.set_value("notification_app", str(app) if app else None)
             payload = installation.install(Path.home(), executable, args.state, activate=args.activate,
-                intervals={"tick": config["tick_interval_seconds"], "scan": config["scan_interval_seconds"]})
+                intervals={"tick": config["tick_interval_seconds"], "scan": config["scan_interval_seconds"]}, app=app)
+            refresh(directory, config, probe=False, send=False)
         elif action == "status":
             payload = read_status(directory, config)
         elif action == "report":

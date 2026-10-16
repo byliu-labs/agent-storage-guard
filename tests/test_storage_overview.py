@@ -205,3 +205,21 @@ def test_empty_agent_prompt_requests_fresh_evidence_without_inventing_paths():
     assert "/Users/" not in prompt
     assert "swap files" in prompt
 
+
+def test_incomplete_areas_show_the_failure_before_opening_the_appendix():
+    html = render({"time": 1_000, "config": {"roots": [{"path": "/tmp"}]},
+                   "scan": {"time": 1_000, "groups": {"/tmp": {
+                       "complete": False, "error": "Permission denied: protected child", "error_kind": "permission_denied"}}}})
+    area = html.split('id="areas-title"')[1].split('id="actions-title"')[0]
+    assert "Access denied" in area
+    assert "monitor permissions" in area
+
+
+def test_permission_help_identifies_the_actual_reader_and_its_scope():
+    html = render({"time": 1_000, "platform": "darwin", "reader_path": "/monitor/Agent Storage Guard.app",
+                   "config": {"roots": [{"path": "/home/test/.Trash"}]},
+                   "scan": {"time": 1_000, "groups": {"/home/test/.Trash": {
+                       "complete": False, "error": "Permission denied", "error_kind": "permission_denied"}}}})
+    assert "/monitor/Agent Storage Guard.app" in html and "Full Disk Access" in html
+    assert "do not grant access to a shared Python" in html
+

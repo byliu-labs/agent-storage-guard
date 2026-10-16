@@ -15,12 +15,16 @@ import sys
 import tempfile
 import uuid
 
+from .app_identity import ICON_SOURCE, MONITOR_SOURCE
+
 BUNDLE_ID = "io.github.byliu-labs.agent-storage-guard"
 SCRIPT = "on run argv\ndisplay notification (item 2 of argv) with title (item 1 of argv)\nend run"
 SWIFT_SOURCE = r'''
 import AppKit
 import Foundation
 import UserNotifications
+
+// MONITOR_LAUNCHER
 
 final class AlertDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -120,7 +124,8 @@ application.run()
 '''
 
 
-def prepare_app(directory: Path, report_path: Path) -> Path:
+def prepare_app(directory: Path, report_path: Path, executable: Path | None = None,
+                state: Path | None = None) -> Path:
     """Build a private, ad-hoc signed helper. Preserve a replaced bundle for rollback."""
     if sys.platform != "darwin":
         raise RuntimeError("native app helper requires macOS")
@@ -136,16 +141,29 @@ def prepare_app(directory: Path, report_path: Path) -> Path:
         root = Path(temporary)
         staged = root / app.name
         contents = staged / "Contents"
-        binary = contents / "MacOS/storage-alert"
+        binary = contents / "MacOS/Agent Storage Guard"
         binary.parent.mkdir(parents=True, mode=0o700)
         source = root / "Alert.swift"
-        source.write_text(SWIFT_SOURCE)
+        source.write_text(SWIFT_SOURCE.replace("// MONITOR_LAUNCHER", MONITOR_SOURCE))
         subprocess.run([compiler, "-O", str(source), "-o", str(binary)],
                        check=True, capture_output=True, text=True, timeout=120)
         manifest = {"CFBundleIdentifier": BUNDLE_ID, "CFBundleName": "Agent Storage Guard",
-                    "CFBundleDisplayName": "Agent Storage Guard", "CFBundleExecutable": "storage-alert",
+                    "CFBundleDisplayName": "Agent Storage Guard", "CFBundleExecutable": "Agent Storage Guard",
                     "CFBundlePackageType": "APPL", "CFBundleVersion": "1", "LSUIElement": True,
-                    "NSHighResolutionCapable": True, "ASGReportPath": str(report_path.absolute())}
+                    "NSHighResolutionCapable": True, "ASGReportPath": str(report_path.absolute()),
+                    "CFBundleIconFile": "StorageGuard.icns"}
+        if executable is not None and state is not None:
+            manifest.update(ASGMonitorCLI=str(executable.absolute()), ASGMonitorState=str(state.absolute()))
+        resources = contents / "Resources"
+        resources.mkdir(mode=0o700)
+        iconset = root / "StorageGuard.iconset"
+        iconset.mkdir()
+        artwork = root / "Icon.swift"
+        artwork.write_text(ICON_SOURCE)
+        subprocess.run([shutil.which("swift") or "swift", str(artwork), str(iconset)],
+                       check=True, capture_output=True, text=True, timeout=120)
+        subprocess.run(["/usr/bin/iconutil", "-c", "icns", str(iconset), "-o", str(resources / "StorageGuard.icns")],
+                       check=True, capture_output=True, text=True, timeout=20)
         (contents / "Info.plist").write_bytes(plistlib.dumps(manifest))
         subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", "--identifier", BUNDLE_ID, str(staged)],
                        check=True, capture_output=True, text=True, timeout=20)
@@ -160,7 +178,7 @@ def prepare_app(directory: Path, report_path: Path) -> Path:
 def command(alert: dict, app: Path | None = None) -> list[str]:
     if app:
         category = "MEMORY" if alert.get("key") == "memory" else "REPORT"
-        return [str(Path(app) / "Contents/MacOS/storage-alert"), str(alert.get("key", "storage")),
+        return [str(Path(app) / "Contents/MacOS/Agent Storage Guard"), str(alert.get("key", "storage")),
                 alert["title"], alert["message"], category]
     if sys.platform == "darwin":
         return ["/usr/bin/osascript", "-e", SCRIPT, alert["title"], alert["message"]]
@@ -181,6 +199,6 @@ def notify(alert: dict, app: Path | None = None, report_path: Path | None = None
 def diagnose(app: Path) -> dict:
     """Inspect our own native notification settings without requesting permission."""
     import json
-    result = subprocess.run([str(Path(app) / "Contents/MacOS/storage-alert"), "--diagnose"],
+    result = subprocess.run([str(Path(app) / "Contents/MacOS/Agent Storage Guard"), "--diagnose"],
                             check=True, capture_output=True, text=True, timeout=30)
     return json.loads(result.stdout)

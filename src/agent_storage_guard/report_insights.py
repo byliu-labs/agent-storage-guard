@@ -150,6 +150,7 @@ def _folders(payload: dict, period: dict) -> list[dict]:
         row = {"path": path, "label": label, "bytes": group.get("bytes"),
                "coverage": "complete" if complete else "older" if older else "unknown",
                "observed_at": at, "category": _category(root), "root": root,
+               "error": current.get("error"), "error_kind": current.get("error_kind"),
                "grouped": grouped, "inspect_path": root if grouped else path,
                "baseline_delta_bytes": group["bytes"] - origin["bytes"] if complete and origin else None}
         row.update(_folder_delta(path, observed, group["bytes"], history, period["window_seconds"])
@@ -160,7 +161,8 @@ def _folders(payload: dict, period: dict) -> list[dict]:
 
 def _root_contribution(root: str, by_path: dict[str, dict]) -> dict:
     unknown = {"path": root, "bytes": None, "delta_bytes": None, "coverage": "unknown",
-               "observed_at": None, "period_started_at": None, "period_elapsed_seconds": None}
+               "observed_at": None, "period_started_at": None, "period_elapsed_seconds": None,
+               "error": by_path.get(root, {}).get("error"), "error_kind": by_path.get(root, {}).get("error_kind")}
     row = by_path.get(root, unknown)
     if row["coverage"] == "complete":
         return {**row, "known_bytes": row["bytes"], "known_delta_bytes": row["delta_bytes"], "older_known_bytes": 0}
@@ -212,6 +214,8 @@ def _locations(payload: dict, rows: list[dict]) -> list[dict]:
             "delta_bytes": sum(deltas) if len(deltas) == len(members) and complete else None,
             "known_delta_bytes": sum(measured_deltas) if measured_deltas else None,
             "coverage": coverage, "observed_at": min(times) if times else None,
+            "issues": [{"path": r["path"], "error": r["error"], "kind": r.get("error_kind")}
+                       for r in members if r.get("error")],
             "period_started_at": min(starts) if starts else None,
             "period_elapsed_seconds": max(intervals) if intervals else None,
             "roots": [r["path"] for r in members], "root_count": len(members)})
@@ -303,7 +307,7 @@ def build(payload: dict) -> dict:
     period, status = _period(payload), _status(payload)
     rows = _folders(payload, period)
     growers = _growers(rows) if status["folder_fresh"] else []
-    gaps = [{"path": path, "error": group.get("error", "incomplete measurement")}
+    gaps = [{"path": path, "error": group.get("error", "incomplete measurement"), "kind": group.get("error_kind")}
             for path, group in payload.get("scan", {}).get("groups", {}).items() if not group.get("complete")]
     gaps = [gap for gap in gaps if not any(_under(gap["path"], other["path"]) for other in gaps if other != gap)]
     older = [row for row in rows if row["coverage"] == "older" and (row["bytes"] or 0) >= GIB]
@@ -321,6 +325,7 @@ def build(payload: dict) -> dict:
                         "capacity_recent": _capacity_recent(payload)},
             "actions": _actions(status, growers, gaps, older),
             "appendix": {"folders": rows, "coverage_gaps": gaps, "worktrees": payload.get("worktrees", {}),
+                "reader_path": payload.get("reader_path"), "platform": payload.get("platform"),
                 "caveats": ["Location categories use disjoint configured root totals. For partial roots, only nonoverlapping currently measured subfolders contribute to known bytes; the remainder stays unknown.",
                             "To refresh manually: agent-storage-guard monitor tick; agent-storage-guard monitor scan; agent-storage-guard monitor report --open.",
                             "Coverage gaps and absent history are unknown, never zero. Older complete values are explicitly labeled.",

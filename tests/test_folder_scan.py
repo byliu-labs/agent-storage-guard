@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 
 from agent_storage_guard.folder_scan import scan_root, scan_roots
 
@@ -91,3 +92,69 @@ def test_macos_system_var_alias_keeps_original_keys(tmp_path):
     assert groups[str(logical)]["complete"] is True
     assert groups[str(logical / "child")]["bytes"] >= 8192
     assert not any(key.startswith("/private/var/") for key in groups)
+
+
+def native_fixture(tmp_path, monkeypatch, body):
+    from agent_storage_guard import folder_scan
+    executable = tmp_path / "native-scanner"
+    executable.write_text(f"#!{sys.executable}\nimport sys,time\nfrom pathlib import Path\nroot=Path(sys.argv[-1])\n" + body)
+    executable.chmod(0o700)
+    monkeypatch.setattr(folder_scan, "_DU", str(executable), raising=False)
+
+
+def test_large_native_stream_is_aggregated_without_a_raw_output_ceiling(tmp_path, monkeypatch):
+    native_fixture(tmp_path, monkeypatch,
+                   "for i in range(60000): print(f'4\\t{root}/test-{i:05d}')\nprint(f'240000\\t{root}')\n")
+    groups = scan_root({"path": str(tmp_path), "prefix_groups": ["test-"]}, timeout=10)
+    assert groups[str(tmp_path)]["complete"]
+    assert groups[str(tmp_path) + "/[test-*]"]["bytes"] == 240000 * 1024
+    assert len(groups) == 3
+
+
+def test_deadline_keeps_completed_subtrees_and_marks_root_incomplete(tmp_path, monkeypatch):
+    child = tmp_path / "finished"
+    child.mkdir()
+    native_fixture(tmp_path, monkeypatch, "print(f'8\\t{root}/finished',flush=True)\ntime.sleep(5)\n")
+    groups = scan_root({"path": str(tmp_path)}, timeout=.5)
+    assert groups[str(child)]["complete"] and groups[str(child)]["bytes"] == 8192
+    assert not groups[str(tmp_path)]["complete"]
+    assert "deadline" in groups[str(tmp_path)]["error"]
+
+
+def test_permission_failure_keeps_readable_siblings_and_original_reason(tmp_path, monkeypatch):
+    native_fixture(tmp_path, monkeypatch,
+                   "print(f'8\\t{root}/readable')\nprint(f'0\\t{root}/denied')\nprint(f'8\\t{root}')\n"
+                   "print(f'du: {root}/denied: Operation not permitted',file=sys.stderr)\nsys.exit(1)\n")
+    groups = scan_root({"path": str(tmp_path)})
+    assert groups[str(tmp_path / "readable")]["complete"]
+    assert not groups[str(tmp_path / "denied")]["complete"]
+    assert "permission" in groups[str(tmp_path)]["error"].lower()
+
+
+def test_denied_root_explains_access_instead_of_missing_root_total(tmp_path, monkeypatch):
+    native_fixture(tmp_path, monkeypatch,
+                   "print(f'du: {root}: Operation not permitted',file=sys.stderr)\nsys.exit(1)\n")
+    groups = scan_root({"path": str(tmp_path)})
+    assert not groups[str(tmp_path)]["complete"]
+    assert "Operation not permitted" in groups[str(tmp_path)]["error"]
+
+
+def test_detail_budget_does_not_discard_a_complete_root_total(tmp_path, monkeypatch):
+    native_fixture(tmp_path, monkeypatch,
+                   "for i in range(12500): print(f'4\\t{root}/item-{i:05d}')\nprint(f'50000\\t{root}')\n")
+    groups = scan_root({"path": str(tmp_path)}, timeout=10)
+    assert groups[str(tmp_path)]["complete"]
+    assert groups[str(tmp_path)]["bytes"] == 50000 * 1024
+    assert not groups[str(tmp_path)]["children_complete"]
+    assert len(groups) <= 12000
+
+
+def test_slow_root_cannot_consume_the_whole_pass_before_fast_cache(tmp_path, monkeypatch):
+    slow, fast = tmp_path / "slow", tmp_path / "fast-cache"
+    slow.mkdir()
+    fast.mkdir()
+    native_fixture(tmp_path, monkeypatch,
+                   "if root.name == 'slow': time.sleep(5)\nprint(f'8\\t{root}')\n")
+    groups = scan_roots([{"path": str(slow)}, {"path": str(fast)}], timeout=5, total_timeout=1)
+    assert groups[str(fast)]["complete"] and groups[str(fast)]["bytes"] == 8192
+    assert not groups[str(slow)]["complete"]

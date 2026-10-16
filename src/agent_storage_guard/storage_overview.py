@@ -118,6 +118,11 @@ def _areas(view: dict) -> str:
         label = {"older": "Earlier measurement", "unknown": "Not measured", "partial": "Some folders unmeasured",
                  "older_partial": "Earlier partial measurement"}.get(coverage, "")
         status = f'<span class="quality">{label}</span>' if label else ""
+        reasons = {"permission_denied": "Access denied; review monitor permissions",
+                   "deadline": "Scan timed out; completed folders retained"}
+        issues = list(dict.fromkeys(reasons.get(issue.get("kind"), str(issue["error"]).split(": ", 1)[0][:160])
+                                    for issue in item.get("issues", [])))
+        status += "".join(f'<span class="scan-issue">{_text(reason)}</span>' for reason in issues[:3])
         bar = f'<div class="size-bar" aria-hidden="true"><i style="width:{width:.1f}%"></i></div>' if known is not None else ""
         rows.append(f'''<tr><th scope="row">{_text(item.get("label"))}{status}
           {bar}</th>
@@ -226,6 +231,11 @@ def _appendix(view: dict) -> str:
     memory_error = memory.get("error", memory.get("reason"))
     memory_evidence = (f'<h3>Memory measurement</h3><p class="secondary">{_text(memory_error)}</p>'
                        if memory_error else "")
+    access = (f'<h3>Allow the monitor to read protected folders</h3><p class="secondary">In macOS System Settings → Privacy &amp; Security → Full Disk Access, '
+              f'add <strong>Agent Storage Guard</strong>: <code>{_text(data["reader_path"])}</code>. '
+              'Full Disk Access is broad OS permission. The installed app runs the configured read-only monitor; do not grant access to a shared Python interpreter. After approving access, run a new scheduled scan to verify coverage.</p>'
+              if data.get("platform") == "darwin" and data.get("reader_path")
+              and any(gap.get("kind") == "permission_denied" for gap in data.get("coverage_gaps", [])) else "")
     worktrees = data.get("worktrees", {})
     tree_rows = "".join(f'<li><code>{_text(item.get("path", item.get("worktree", "?")))}</code> · '
                         f'{_text(item.get("branch", "detached"))}'
@@ -245,7 +255,7 @@ def _appendix(view: dict) -> str:
           <p id="copy-status" class="secondary" role="status" aria-live="polite"></p>
           <textarea id="copy-fallback" aria-label="Path to copy" readonly hidden></textarea>
           <p class="secondary">To inspect a copied path in Finder, choose Go → Go to Folder, then paste. Grouped folders copy their real parent location.</p>
-          <h3>Scan coverage</h3><ul class="coverage">{gaps}</ul>
+          <h3>Scan coverage</h3><ul class="coverage">{gaps}</ul>{access}
           <h3>Refresh this report</h3><p class="secondary">The installed monitor updates measurements on its schedule. To request a new capacity check and folder scan from Terminal:</p>
           <p><code>agent-storage-guard monitor tick</code><br><code>agent-storage-guard monitor scan</code><br><code>agent-storage-guard monitor report --open</code></p>
           {memory_evidence}<h3>How to read this evidence</h3><ul class="caveats">{caveats}</ul>{inventory}
@@ -299,6 +309,7 @@ td small{display:block;font-size:11px;color:var(--muted);white-space:nowrap}
 .size-bar{height:4px;border-radius:4px;background:var(--line);width:80%;max-width:200px;margin-top:9px;overflow:hidden}
 .size-bar i{display:block;height:100%;background:var(--accent);opacity:.65}
 .quality{display:block;font-size:11px;color:var(--warn)}
+.scan-issue{display:block;font-size:12px;color:var(--warn);max-width:300px;overflow-wrap:anywhere}
 button{font:inherit;cursor:pointer}
 .review{background:var(--paper);border:1px solid var(--line);color:var(--accent);padding:7px 10px;border-radius:8px;font-size:12px;font-weight:600;white-space:nowrap}
 .review:hover{background:var(--soft);border-color:var(--accent)}

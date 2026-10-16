@@ -2,6 +2,10 @@ import plistlib
 import shutil
 import subprocess
 import sys
+import json
+import os
+import signal
+import time
 from pathlib import Path
 
 import pytest
@@ -22,13 +26,38 @@ def test_prepare_app_builds_registered_identity_and_supports_read_only_selftest(
     # A temporary registered helper must never replace the installed app's
     # Launch Services association or inspect its notification permissions.
     monkeypatch.setattr(notifications, "BUNDLE_ID", notifications.BUNDLE_ID + ".tests")
-    app = notifications.prepare_app(tmp_path / "sender", tmp_path / "report.html")
+    cli = tmp_path / "test-cli"
+    child_pid = tmp_path / "child.pid"
+    scanner_pid = tmp_path / "scanner.pid"
+    scanner = tmp_path / "slow-du"
+    scanner.write_text(f'#!{sys.executable}\nimport os,time\nfrom pathlib import Path\nPath({str(scanner_pid)!r}).write_text(str(os.getpid()))\ntime.sleep(30)\n')
+    scanner.chmod(0o700)
+    cli.write_text(f'''#!{sys.executable}
+import json, os, sys, time
+from pathlib import Path
+if "scan" in sys.argv:
+    Path({str(child_pid)!r}).write_text(str(os.getpid()))
+    try:
+        from agent_storage_guard import folder_scan
+        folder_scan._DU = {str(scanner)!r}
+        folder_scan.scan_root({{"path": {str(tmp_path)!r}, "depth": 1}}, timeout=30)
+    except KeyboardInterrupt:
+        sys.exit(130)
+else:
+    print(json.dumps(sys.argv[1:]))
+    sys.exit(7)
+''')
+    cli.chmod(0o700)
+    app = notifications.prepare_app(tmp_path / "sender", tmp_path / "report.html", cli, tmp_path / "state")
     manifest = plistlib.loads((app / "Contents/Info.plist").read_bytes())
     assert manifest["CFBundleDisplayName"] == "Agent Storage Guard"
     assert manifest["LSUIElement"]
     assert manifest["CFBundleIdentifier"].endswith(".tests")
     assert manifest["ASGReportPath"] == str(tmp_path / "report.html")
-    executable = app / "Contents/MacOS/storage-alert"
+    assert manifest["ASGMonitorCLI"] == str(cli)
+    icon = app / "Contents/Resources" / manifest["CFBundleIconFile"]
+    assert icon.read_bytes().startswith(b"icns")
+    executable = app / "Contents/MacOS/Agent Storage Guard"
     result = subprocess.run([str(executable), "--self-test"], capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr
     assert notifications.BUNDLE_ID in result.stdout
@@ -38,6 +67,40 @@ def test_prepare_app_builds_registered_identity_and_supports_read_only_selftest(
     assert isinstance(diagnostics["alerts_enabled"], bool)
     assert diagnostics["delivered_count"] >= 0
     assert notifications.command({"key":"memory", "title":"Pressure", "message":"Save work"}, app=app)[-1] == "MEMORY"
+    result = subprocess.run([str(executable), "--monitor", "tick"], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 7, result.stderr
+    assert json.loads(result.stdout) == ["--state", str(tmp_path / "state"), "monitor", "tick", "--notify"]
+    for args in (["--monitor", "run"], ["--monitor", "tick", "--anything"]):
+        result = subprocess.run([str(executable), *args], capture_output=True, text=True, timeout=10)
+        assert result.returncode == 64
+    process = subprocess.Popen([str(executable), "--monitor", "scan"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    pid = None
+    try:
+        deadline = time.monotonic() + 10
+        while not scanner_pid.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        pid = int(child_pid.read_text())
+        native_pid = int(scanner_pid.read_text())
+        process.terminate()
+        assert process.wait(timeout=10) == 130
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)
+        with pytest.raises(ProcessLookupError):
+            os.kill(native_pid, 0)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        if pid:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if scanner_pid.exists():
+            try:
+                os.kill(int(scanner_pid.read_text()), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
 
 def test_linux_without_sender_fails_visibly(monkeypatch):

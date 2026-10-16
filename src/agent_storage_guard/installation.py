@@ -54,15 +54,19 @@ def _copy(source: Path, destination: Path) -> None:
     os.replace(temporary, destination)
 
 
-def service_plist(executable: Path, state: Path, command: str, interval: int | None = None) -> dict:
+def service_plist(executable: Path, state: Path, command: str, interval: int | None = None,
+                  app: Path | None = None) -> dict:
     if command not in {"tick", "scan"}:
         raise ValueError("unknown monitor service")
     interval = (300 if command == "tick" else 3600) if interval is None else interval
     if type(interval) is not int or not 1 <= interval <= 86400:
         raise ValueError("launchd service interval must be an integer between 1 and 86400 seconds")
     logs = state / "monitor" / "logs"
+    arguments = ([str(app / "Contents/MacOS/Agent Storage Guard"), "--monitor", command] if app else
+                 [str(executable), "--state", str(state), "monitor", command, "--notify"])
     return {"Label": f"local.agent-storage-guard.{command}",
-            "ProgramArguments": [str(executable), "--state", str(state), "monitor", command, "--notify"],
+            "ProgramArguments": arguments,
+            **({"AssociatedBundleIdentifiers": ["io.github.byliu-labs.agent-storage-guard"]} if app else {}),
             "StartInterval": interval, "RunAtLoad": True,
             "ProcessType": "Background", "Nice": 10, "LowPriorityIO": True, "Umask": 0o077,
             "StandardOutPath": "/dev/null",
@@ -92,7 +96,8 @@ def _restore(manifest: dict, archive: Path, controller: Path) -> None:
 
 
 def install(home: Path, executable: Path, state: Path, activate: bool = False,
-            launchctl: Path = Path("/bin/launchctl"), intervals: dict | None = None) -> dict:
+            launchctl: Path = Path("/bin/launchctl"), intervals: dict | None = None,
+            app: Path | None = None) -> dict:
     if not executable.is_absolute():
         raise RuntimeError("installer requires an absolute executable CLI path")
     executable, state, home = executable.absolute(), state.absolute(), home.absolute()
@@ -104,7 +109,9 @@ def install(home: Path, executable: Path, state: Path, activate: bool = False,
     if not isinstance(intervals, dict) or intervals.keys() != {"tick", "scan"}:
         raise ValueError("service intervals must specify exactly tick and scan")
     for command, interval in intervals.items():
-        service_plist(executable, state, command, interval)
+        service_plist(executable, state, command, interval, app)
+    if app is not None and not os.access(app / "Contents/MacOS/Agent Storage Guard", os.X_OK):
+        raise RuntimeError("monitor app executable is missing or not executable")
     private_directory(state)
     monitor = private_directory(state / "monitor")
     private_directory(monitor / "logs")
@@ -112,11 +119,11 @@ def install(home: Path, executable: Path, state: Path, activate: bool = False,
     agents = _safe_directory(home / "Library" / "LaunchAgents")
     with os.fdopen(checked_file(monitor / "installation.lock", create=True), "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return _install_locked(agents, executable, state, activate, launchctl, intervals)
+        return _install_locked(agents, executable, state, activate, launchctl, intervals, app)
 
 
 def _install_locked(agents: Path, executable: Path, state: Path, activate: bool,
-                    controller: Path, intervals: dict) -> dict:
+                    controller: Path, intervals: dict, app: Path | None) -> dict:
     archive = private_directory(state / "monitor" / "installations" / uuid.uuid4().hex)
     domain = f"gui/{os.getuid()}"
     manifest = {"schema": 1, "agents": str(agents), "executable": str(executable),
@@ -137,7 +144,7 @@ def _install_locked(agents: Path, executable: Path, state: Path, activate: bool,
         staged = archive / f"local.agent-storage-guard.{command}.plist"
         with staged.open("xb") as output:
             os.chmod(staged, 0o600)
-            plistlib.dump(service_plist(executable, state, command, intervals[command]), output)
+            plistlib.dump(service_plist(executable, state, command, intervals[command], app), output)
         plistlib.loads(staged.read_bytes())
         if sys.platform == "darwin":
             subprocess.run(["/usr/bin/plutil", "-lint", str(staged)], check=True, capture_output=True)
