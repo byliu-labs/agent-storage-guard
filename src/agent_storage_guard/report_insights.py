@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .investigation import plan
+
 GIB = 1024 ** 3
 _WINDOWS = (("Past hours", 3600), ("Past day", 86400), ("Past week", 7 * 86400))
 
@@ -321,6 +323,7 @@ def build(payload: dict) -> dict:
         summary = (f"Folder changes are available over {period['elapsed_seconds'] / 3600:.1f} hours; comparable disk-capacity history is not available."
                    if comparable_folders else "Earlier folder history is available, but current folder changes are unknown. Refresh incomplete or older measurements.")
     return {"status": status, "period": period, "locations": _locations(payload, rows),
+            "investigation": plan(rows, payload.get("config", {}).get("roots", [])),
             "changes": {"summary": summary, "period_label": period["label"], "rows": growers[:5],
                         "capacity_recent": _capacity_recent(payload)},
             "actions": _actions(status, growers, gaps, older),

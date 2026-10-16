@@ -6,6 +6,7 @@ from html import escape
 import json
 
 from .report_insights import build
+from .investigation import PROCEDURE
 
 
 def _text(value: object) -> str:
@@ -134,7 +135,7 @@ def _areas(view: dict) -> str:
              if rows else '<p class="empty">No folder measurements yet. Refresh the folder scan to build a baseline.</p>')
     return f'''<section aria-labelledby="areas-title">
       <div class="section-label"><span>03</span><h2 id="areas-title">Where storage is used</h2></div>
-      <p class="secondary">Monitored locations. Nested folders are counted once.</p>
+      <p class="secondary">Coverage: configured roots only. A complete monitor scan is not a full workstation audit. Nested folders are counted once.</p>
       <p class="timestamp">{"Folder scan measured" if view["status"].get("folder_fresh") else "Folder measurements are older or unavailable — refresh before cleanup"} · {_time(view["status"].get("folder_measured_at"))}</p>
       {table}
     </section>'''
@@ -157,6 +158,14 @@ def _agent_prompt(view: dict, report_path: str | None) -> str:
         f"Comparison: {period['label']}, {_time(period.get('started_at'))} to {_time(period.get('ended_at'))}.",
         "Changes: " + view["changes"]["summary"],
     ]
+    scope = view["investigation"]
+    lines.extend(PROCEDURE)
+    lines.append("All monitored roots (not an exhaustive workstation census): " +
+                 json.dumps([r["path"] for r in scope["roots"]], ensure_ascii=False))
+    for row in scope["starting_points"]:
+        parent = f"; inspect parent {json.dumps(row['inspect_path'])}" if row.get("grouped") else ""
+        lines.append(f"Start {json.dumps(row['path'], ensure_ascii=False)}{parent}: {_bytes(row['bytes'])}; "
+                     f"{row['coverage']} at {_time(row['observed_at'])}. Size matters even without recent growth.")
     recent = view["changes"].get("capacity_recent")
     if recent and period.get("free_delta_bytes") is None:
         lines.append(f"Separate recent disk trend: {_bytes(recent['delta_bytes'], signed=True)} free space over {_duration(recent['elapsed_seconds'])}.")
@@ -195,8 +204,9 @@ def _actions(view: dict, report_path: str | None) -> str:
     content = f'<ol class="actions">{"".join(actions)}</ol>' if actions else '<p>No action is suggested from the available evidence.</p>'
     return f'''<section aria-labelledby="actions-title">
       <div class="section-label"><span>04</span><h2 id="actions-title">What you can do</h2></div>
+      {_starting_points(view)}
       <div class="agent-handoff"><h3>Ask your coding agent to investigate</h3>
-        <p>Copy this brief into an agent you trust. It includes local paths and asks for approval before cleanup.</p>
+        <p>Copy a workstation audit brief, including large stable folders and a coverage checklist. It includes local paths and asks for approval before cleanup.</p>
         <button class="review" id="copy-agent-prompt" type="button">Copy investigation prompt</button>
         <p id="agent-copy-status" class="secondary" role="status" aria-live="polite"></p>
         <details class="prompt-preview"><summary>Preview prompt</summary>
@@ -204,6 +214,18 @@ def _actions(view: dict, report_path: str | None) -> str:
         </details></div>
       {content}
     </section>'''
+
+
+def _starting_points(view: dict) -> str:
+    scope = view["investigation"]
+    rows = "".join(f'<li><div><h3>{_text(row["label"])} · {_bytes(row["bytes"])}</h3>'
+                   f'<p class="folder-path">{_text(row["path"])}</p>'
+                   f'<p class="secondary">{_text(row["coverage"])} · {_time(row["observed_at"])}</p>'
+                   f'{_review(row["path"], row["label"])}</div></li>' for row in scope["starting_points"][:5])
+    return (f'<div id="investigation-scope"><h3>Start with these locations</h3>'
+            f'<p>Large folders deserve review even when they have stopped growing. These are investigation starting points; cleanup safety has not been checked.</p>'
+            f'<ul class="actions">{rows}</ul><p class="secondary">Before calling an audit complete, account for every project sibling and discovered material location, including older worktrees, standalone clones and loose output folders. Explain preserved areas and coverage gaps.</p></div>'
+            if rows else '<p id="investigation-scope">No measured starting locations yet. Discover local storage and record coverage before proposing cleanup.</p>')
 
 
 def _folder_row(item: dict) -> str:
@@ -223,6 +245,10 @@ def _folder_row(item: dict) -> str:
 
 def _appendix(view: dict) -> str:
     data = view.get("appendix", {})
+    context = {"schema_version": 1, "status": view["status"], "period": view["period"],
+               "investigation": view["investigation"], "locations": view["locations"],
+               "folders": data["folders"], "coverage_gaps": data["coverage_gaps"],
+               "worktrees": data.get("worktrees", {})}
     folders = "".join(_folder_row(row) for row in data.get("folders", []))
     gaps = "".join(f'<li><code>{_text(gap.get("path"))}</code><br>{_text(gap.get("error"))}</li>'
                    for gap in data.get("coverage_gaps", [])) or "<li>No coverage gaps reported.</li>"
@@ -255,7 +281,11 @@ def _appendix(view: dict) -> str:
           <p id="copy-status" class="secondary" role="status" aria-live="polite"></p>
           <textarea id="copy-fallback" aria-label="Path to copy" readonly hidden></textarea>
           <p class="secondary">To inspect a copied path in Finder, choose Go → Go to Folder, then paste. Grouped folders copy their real parent location.</p>
-          <h3>Scan coverage</h3><ul class="coverage">{gaps}</ul>{access}
+          <h3>Scan coverage</h3><p class="secondary">Configured roots only; no workstation cleanup audit has been completed by this monitor.</p><ul class="coverage">{gaps}</ul>{access}
+          <details class="nested"><summary>Structured evidence for an agent (JSON)</summary>
+            <p class="secondary">All monitored roots and retained folder rows, including unknown values and virtual group parent paths. Local metadata only; this does not prove cleanup eligibility.</p>
+            <textarea id="agent-context" aria-label="Structured report evidence" rows="8" readonly>{_text(json.dumps(context, ensure_ascii=False, separators=(',', ':')))}</textarea>
+          </details>
           <h3>Refresh this report</h3><p class="secondary">The installed monitor updates measurements on its schedule. To request a new capacity check and folder scan from Terminal:</p>
           <p><code>agent-storage-guard monitor tick</code><br><code>agent-storage-guard monitor scan</code><br><code>agent-storage-guard monitor report --open</code></p>
           {memory_evidence}<h3>How to read this evidence</h3><ul class="caveats">{caveats}</ul>{inventory}
