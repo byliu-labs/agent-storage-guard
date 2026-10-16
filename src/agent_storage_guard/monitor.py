@@ -116,7 +116,8 @@ def snapshot(store, config: dict) -> dict:
         trend = {"started_at": baseline["time"],
                  "elapsed_seconds": capacity["time"] - baseline["time"],
                  "swap_delta_bytes": memory["swap_used_bytes"] - baseline["memory"]["swap_used_bytes"]}
-    return {"time": time.time(), "config": config, "capacity": capacity, "memory_trend": trend,
+    return {"time": time.time(), "report_path": str(store.state / "report.html"),
+            "config": config, "capacity": capacity, "memory_trend": trend,
             "scan": store.latest_scan() or {}, "alerts": store.get_value("active_alerts", []),
             "folder_history": store.report_history(), "capacity_history": capacity_history,
             "worktrees": store.get_value("worktrees", {})}

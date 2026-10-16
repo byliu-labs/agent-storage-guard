@@ -30,6 +30,8 @@ The default view has five parts, in this order:
 
 A menu bar entry can later expose this same overview and monitor health; it is not installed by this version.
 
+Under **What you can do**, **Copy investigation prompt** creates a concise brief for a coding agent: current disk/memory status, actual comparison periods, major storage areas, leading growers and older suspects, scan gaps, and the exact local report path for full evidence. Preview the text before sharing; it includes local paths. If clipboard access fails, the preview opens and selects the prompt for manual copying. The brief directs the agent to refresh uncertain measurements, protect unfinished work, investigate causes and prevention, and obtain exact cleanup approval before reversible staging. Copying a prompt does not authorize or execute cleanup, upload data, or contact an agent.
+
 Warnings normally repeat at most every six hours, urgent alerts hourly. Severity escalation bypasses cooldown. Reserve recovery requires two samples above a 2 GiB recovery margin. Warning confirmation requires samples between half and 2.5 times the configured probe interval; repeated immediate manual invocations do not establish sustained pressure. Growth alerts deduplicate overlapping parent/child paths and require further material growth before repeating. Stale or unsupported evidence is not a healthy measurement.
 
 ## Evidence and budgets

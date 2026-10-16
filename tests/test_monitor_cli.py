@@ -144,6 +144,8 @@ def test_report_command_refreshes_current_status_and_prints_html_location(tmp_pa
     assert path.is_file() and path.stat().st_mode & 0o077 == 0
     html = path.read_text()
     assert "Current status" in html and "What you can do" in html
+    assert "Copy investigation prompt" in html
+    assert str(path) in html  # Prompt points at this custom state, not a default.
     from agent_storage_guard.monitor_store import MonitorStore
     with MonitorStore(state / "monitor") as store:
         assert store.latest_capacity()["total_bytes"] > 0

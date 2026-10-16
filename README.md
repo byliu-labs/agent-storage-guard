@@ -42,6 +42,8 @@ The macOS installation measures free space and memory every five minutes, and co
 
 The notification opens a local HTML overview in your browser: current status, useful changes over the available hours/day/week, storage areas and their deltas, specific next actions, then a collapsed evidence appendix. Review controls open the relevant folder details and filter them; copy controls provide actual folder paths, including the real parent for virtual prefix groups. Bookmark the page or use `monitor report --open` to find it again. No web service or remote assets are needed.
 
+Use **Copy investigation prompt** under **What you can do** to hand the current evidence to your coding agent. The preview includes local paths, measurement limits, and cleanup approval boundaries. A manual-copy fallback works when browser clipboard access is unavailable.
+
 Use `monitor init --root /absolute/path/to/dev` (repeatable) to choose roots instead of the defaults. Edit the private `~/.asg/monitor/config.json` for thresholds or intervals; rerun `monitor install --activate` after changing scheduling intervals. Baselines, bounded history and alert state live in the same local SQLite database. The overview is `~/.asg/monitor/report.html`; `monitor status` remains a terminal text view, and `monitor status --json` exposes evidence for integrations.
 
 To migrate the earlier pc-backup monitor, run this **before** initializing the new monitor:
