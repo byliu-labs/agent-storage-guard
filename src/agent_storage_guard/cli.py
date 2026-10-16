@@ -6,6 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
+import sqlite3
 import subprocess
 import sys
 
@@ -41,10 +42,10 @@ def default_state() -> Path:
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description="Budget and own scratch for managed commands; retirement preserves bytes.")
+    result = argparse.ArgumentParser(description="Monitor workstation storage and memory; budget scratch for managed commands.")
     result.add_argument("--state", type=Path, default=default_state())
     result.add_argument("--retirement", type=Path, help="existing same-volume private directory; defaults to macOS Trash or state/retired")
-    commands = result.add_subparsers(dest="action", required=True, metavar="{run,status,reconcile}")
+    commands = result.add_subparsers(dest="action", required=True, metavar="{run,status,reconcile,monitor}")
     run = commands.add_parser("run", help="admit and supervise a command with owned temporary storage")
     run.add_argument("--estimate-gib", type=finite_positive, required=True)
     run.add_argument("--floor-gib", type=finite_nonnegative, default=20)
@@ -54,6 +55,23 @@ def parser() -> argparse.ArgumentParser:
     run.add_argument("command", nargs=argparse.REMAINDER)
     commands.add_parser("status", help="read current registry without changing it")
     commands.add_parser("reconcile", help="recover only provably owned inactive scratch")
+    monitor = commands.add_parser("monitor", help="local history, actionable alerts and workstation reports")
+    monitoring = monitor.add_subparsers(dest="monitor_action", required=True)
+    init = monitoring.add_parser("init", help="create a private monitor with portable defaults")
+    init.add_argument("--root", type=Path, action="append", help="measure this root instead of default locations; repeatable")
+    migration = monitoring.add_parser("migrate", help="import legacy pc-backup JSON history without changing its source")
+    migration.add_argument("--from-state", type=Path, required=True)
+    for name in ("tick", "scan", "status"):
+        probe = monitoring.add_parser(name)
+        probe.add_argument("--json", action="store_true")
+        if name != "status":
+            probe.add_argument("--notify", action="store_true")
+    report = monitoring.add_parser("report", help="refresh current status and generate the local HTML overview")
+    report.add_argument("--open", action="store_true", help="open the overview in your default browser")
+    install = monitoring.add_parser("install", help="prepare macOS launchd jobs and notification identity")
+    install.add_argument("--activate", action="store_true", help="activate jobs and replace legacy monitor jobs with rollback")
+    rollback = monitoring.add_parser("rollback", help="restore jobs from an installation manifest")
+    rollback.add_argument("manifest", type=Path)
     child = commands.add_parser("_child")
     child.add_argument("--root", type=Path, required=True)
     child.add_argument("--parent-fd", type=int, required=True)
@@ -67,6 +85,9 @@ def main() -> int:
     from . import guard
     retirement = args.retirement or (Path.home() / ".Trash" if sys.platform == "darwin" else args.state / "retired")
     try:
+        if args.action == "monitor":
+            from .monitor import dispatch
+            return dispatch(args)
         if args.action == "status":
             print(json.dumps(guard.status(args.state), indent=2))
             return 0
@@ -82,6 +103,6 @@ def main() -> int:
         return guard.run(args.state, retirement, int(args.estimate_gib * GIB),
                          int(args.floor_gib * GIB), args.max_runs,
                          args.poll_seconds, args.label, command)
-    except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as error:
+    except (RuntimeError, OSError, ValueError, sqlite3.Error, subprocess.SubprocessError) as error:
         print(f"storage guard refused: {error}", file=sys.stderr)
         return 75
