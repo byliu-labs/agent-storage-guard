@@ -2,6 +2,7 @@
 import json
 import warnings
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -12,8 +13,10 @@ SECRET = "SYNTHETIC-PRIVATE-SIGNATURE"
 
 
 def inputs(monkeypatch, values=(WEBHOOK, SECRET)):
-    monkeypatch.setattr(delivery_setup.sys, "platform", "darwin")
-    monkeypatch.setattr(delivery_setup.sys.stdin, "isatty", lambda: True)
+    # Emulate only setup's OS boundary. Mutating the shared sys module also makes
+    # unrelated host probes try macOS commands on Linux.
+    monkeypatch.setattr(delivery_setup, "sys", SimpleNamespace(
+        platform="darwin", stdin=SimpleNamespace(isatty=lambda: True)))
     iterator = iter(values)
     monkeypatch.setattr(delivery_setup.getpass, "getpass", lambda prompt: next(iterator))
     saved = []
@@ -172,6 +175,7 @@ def test_keychain_collision_requests_new_destination_without_config_write(tmp_pa
 def test_imessage_setup_stores_recipient_only_in_keychain(tmp_path, monkeypatch):
     from agent_storage_guard import imessage_delivery
     saved = inputs(monkeypatch, ("synthetic@example.invalid",))
+    monkeypatch.setattr(imessage_delivery, "sys", SimpleNamespace(platform="darwin"))
     monkeypatch.setattr(imessage_delivery.os, "access", lambda *args: True)
     directory = tmp_path / "monitor"
     result = delivery_setup.configure(directory, "imessage", "personal")

@@ -59,7 +59,8 @@ def test_setup_refuses_noninteractive_input_without_creating_state(tmp_path):
     state = tmp_path / "absent"
     result = invoke(state, "setup", "--provider", "feishu")
     assert result.returncode != 0
-    assert "setup_terminal_required" in result.stderr
+    gate = "setup_terminal_required" if sys.platform == "darwin" else "setup_macos_required"
+    assert gate in result.stderr
     assert not state.exists()
 
 
