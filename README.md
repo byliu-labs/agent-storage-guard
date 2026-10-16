@@ -1,105 +1,104 @@
 # Agent Storage Guard
 
-Local disk growth history, actionable storage and memory alerts, and reversible scratch ownership for managed commands.
+Keep coding agents from quietly filling your disk. Get local disk and memory alerts, see which folders are growing, and give test/build commands a shared temporary-storage budget.
 
-**Experimental.** One installation includes a read-only workstation monitor and a command guard. It works independently of TreeMap, Disk Steward or any agent runner. The guard protects commands launched through it; it is not a security sandbox or a hard filesystem quota.
+**Experimental · Local-only · No runtime Python dependencies**
 
-## Why this component
+| Component | What it does |
+| --- | --- |
+| Monitor | Records disk/memory pressure and folder growth; opens a local HTML report. |
+| Command guard | Coordinates concurrent commands and watches their temporary storage. |
+| [Sweep Computer Disk skill](skills/sweep-computer-disk/SKILL.md) | Guides your agent through a broader Mac audit and an itemized cleanup proposal. Cleanup requires your approval. |
 
-Several independent coding-agent sessions can each start a package installation, test or media job against the same remaining disk space. A disk-usage report notices the result; the command creating the temporary data also needs a budget and a lifetime.
+Use them together: **monitor → investigate with the skill → approve specific cleanup**. Wrap future builds/tests with the guard to manage scratch growth. Each component also works independently.
 
-The guard serializes admission through one local registry, reserves an estimate, gives the child an owned temporary root, checks free space independently of scratch scans, and retires the root after checked completion. It never permanently deletes run data.
+## Install
 
-Existing projects already solve adjacent problems. See [the reuse decision](docs/reuse.md), [acknowledgements](ACKNOWLEDGEMENTS.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
-
-## Requirements and installation
-
-- Python 3.11+, macOS or Linux.
-- Native `du`, `ps` and `lsof`. macOS provides these; Linux installations must provide `lsof` as well. Missing/incomplete process or file-open evidence fails closed.
-- No runtime Python dependencies, network service or automatic tool downloads. Monitoring uses short scheduled processes and one private SQLite store.
-- macOS native notifications with report/Activity Monitor actions use a tiny helper compiled with Apple's installed `swiftc` and frameworks. Core monitoring and the guard do not need Swift. Linux notifications optionally use an already installed `notify-send`.
-
-From a checkout:
+Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), Git, `du`, `ps` and `lsof`. The guard supports macOS and Linux; the sweep skill targets macOS. Native Mac notification actions also require Apple's installed `swiftc`; Linux notifications optionally use `notify-send`.
 
 ```sh
-uv sync --locked
-uv run agent-storage-guard --help
-uv run agent-storage-guard run --estimate-gib 2 --label project-tests -- uv run pytest
+git clone https://github.com/byliu-labs/agent-storage-guard.git
+cd agent-storage-guard
+uv tool install .
+agent-storage-guard --help
 ```
 
-For a locally installed command, run `uv tool install .` from the checkout. No package is published on PyPI by this repository setup.
+Keep this checkout to install the bundled skill. For future updates, update the checkout and run `uv tool upgrade agent-storage-guard --reinstall`. This repository does not publish a PyPI package.
 
-## Recommended workstation setup
+## Copy this to your agent
+
+```text
+Install https://github.com/byliu-labs/agent-storage-guard on this computer.
+1. Check the platform and prerequisites. Read README.md and AGENTS.md in the
+   checkout before running setup. Use a new checkout or reuse a clean one;
+   preserve existing local changes. Install with uv tool install . and verify
+   agent-storage-guard --help. Ask before installing missing system tools.
+2. Install the entire skills/sweep-computer-disk directory (including scripts,
+   references and agents) in this agent's supported skills directory. For Codex,
+   use ${CODEX_HOME:-$HOME/.codex}/skills/sweep-computer-disk; for Claude Code,
+   use ~/.claude/skills/sweep-computer-disk. If it already exists, compare it
+   and preserve a backup outside the discovery directory before updating.
+   For other agents, check their skill format/location first. Confirm the
+   skill is discoverable; restart the agent session if needed.
+3. Ask which folders to monitor. Initialize with explicit --root paths, then
+   run monitor scan and monitor report --open. Explain coverage gaps.
+4. Offer scheduled monitoring; activate it only after I approve. Explain any
+   notification/compiler requirements. Do not rewrite global agent hooks.
+5. Show a guarded test/build example. Do not scan protected app data, upload
+   reports, delete files, empty Trash, or perform cleanup during installation.
+Report the installed version, skill location, monitored roots and whether
+scheduled monitoring is active.
+```
+
+To install the skill manually, copy the **whole** [`skills/sweep-computer-disk`](skills/sweep-computer-disk) folder into your agent's skills directory. Keep any previous version before replacing it. Invoke it with `$sweep-computer-disk` in Codex, `/sweep-computer-disk` in Claude Code, or your agent's equivalent.
+
+## Start monitoring
+
+After choosing the folders you want measured:
 
 ```sh
-agent-storage-guard monitor init
+agent-storage-guard monitor init --root /absolute/path/to/projects
 agent-storage-guard monitor scan
 agent-storage-guard monitor report --open
+```
+
+Repeat `--root` for more folders. Omit it to use existing development, agent and cache defaults. The report shows current pressure, changes, storage areas and safe next actions. **Copy investigation prompt** hands the evidence to your agent; use the sweep skill for the wider audit.
+
+For scheduled monitoring, after reviewing the configuration:
+
+```sh
 agent-storage-guard monitor install --activate
 ```
 
-The macOS installation measures free space and memory every five minutes, and configured folders hourly. Notifications explain the evidence and next action: review recent growers, move finished work, or save work and quit unused apps through Activity Monitor. Unreadable folders produce one grouped notice, with static gaps suppressed. Nothing is automatically deleted, stopped or restarted.
+On macOS, capacity/memory checks default to every five minutes and folder scans to hourly. See [monitoring](docs/monitoring.md) for configuration, platform limits and migration from the earlier backup monitor.
 
-The notification opens a local HTML overview in your browser: current status, useful changes over the available hours/day/week, storage areas and their deltas, specific next actions, then a collapsed evidence appendix. Review controls open the relevant folder details and filter them; copy controls provide actual folder paths, including the real parent for virtual prefix groups. Bookmark the page or use `monitor report --open` to find it again. No web service or remote assets are needed.
-
-Use **Copy investigation prompt** under **What you can do** to hand the current evidence to your coding agent. The preview includes local paths, measurement limits, and cleanup approval boundaries. A manual-copy fallback works when browser clipboard access is unavailable.
-
-Use `monitor init --root /absolute/path/to/dev` (repeatable) to choose roots instead of the defaults. Edit the private `~/.asg/monitor/config.json` for thresholds or intervals; rerun `monitor install --activate` after changing scheduling intervals. Baselines, bounded history and alert state live in the same local SQLite database. The overview is `~/.asg/monitor/report.html`; `monitor status` remains a terminal text view, and `monitor status --json` exposes evidence for integrations.
-
-To migrate the earlier pc-backup monitor, run this **before** initializing the new monitor:
+## Guard a command
 
 ```sh
-agent-storage-guard monitor migrate --from-state ~/.local/state/pc-backup/disk
-agent-storage-guard monitor status
-agent-storage-guard monitor install --activate
-```
-
-Migration preserves original baseline timestamps, complete/incomplete evidence and history without modifying source files. It refuses a busy legacy scan; retry once the scan completes. Activation replaces only the legacy disk monitor jobs and archives their plists with an explicit rollback manifest; backup schedules are unaffected. Run `monitor rollback /absolute/path/to/manifest.json` to restore the previous jobs. [Monitoring behavior, budgets and platform limits](docs/monitoring.md) describes retention and safe responses.
-
-## Run, inspect and recover
-
-```sh
-agent-storage-guard run --estimate-gib 2 --label video-tests -- npm test
+agent-storage-guard run --estimate-gib 2 --label project-tests -- uv run pytest
 agent-storage-guard status
 agent-storage-guard reconcile
 ```
 
-Default policy is two simultaneous guarded runs, a 20 GiB projected free-space reserve, and one-second scratch polling. Override with `--max-runs`, `--floor-gib` and `--poll-seconds` on `run`. Use a consistent policy and the same state directory across independent sessions; a separate registry cannot coordinate the same reserve. Each active estimate is reserved conservatively, so already allocated scratch can be counted again rather than admit an unsafe run.
+All sessions must share the same state directory and policy. Defaults allow two runs and reserve 20 GiB free space. Only commands launched through the guard are covered; writes outside their assigned temporary directory are outside its scratch budget.
 
-`TMPDIR`, `TMP` and `TEMP` point to the run's scratch directory. Children inherit them. A nested guard shares its validated outer run instead of charging another reservation; it cannot enlarge that run's scratch budget or weaken its actual controller. Ordinary program output remains attached to the terminal.
+## Safety and privacy
 
-The state directory defaults to `~/.asg` (or inherited `ASG_STATE_DIR` for nested runs). The short default leaves room for Unix sockets used by test runners; unusually long home or explicit state paths may need a shorter same-volume location. Global `--state` and `--retirement` options come before the subcommand. macOS retirement defaults to `~/.Trash`; Linux uses a private `retired` directory beneath state. Both locations must be on the scratch filesystem. External-volume state needs a same-volume retirement destination; no large implicit copy occurs.
+- Monitoring is read-only. It never automatically deletes files or stops applications.
+- The guard stops its managed command on pressure and moves validated owned scratch to Trash (macOS) or retained storage (Linux). **Moving to Trash does not free disk space.** Permanent disposal needs a separate decision.
+- This is a watchdog for cooperative tools, not a sandbox or hard filesystem quota.
+- Reports, history, receipts and copied investigation prompts contain local paths and metadata. Keep them private; review before sharing. Commands and environment values are not stored in receipts; keep secrets out of user labels.
+- Local state defaults to `~/.asg`; the report is `~/.asg/monitor/report.html`. No hosted service or remote report assets are required.
 
-A successful retirement is a rename to `asg-<run UUID>`. Receipts under `state/receipts` record the original path, retired path, outcome, process/filesystem identity and a bounded user label. Command arguments and environment values are not persisted. Labels are user-provided metadata: do not put secrets in them.
+See [guard behavior, recovery and exit codes](docs/command-guard.md), [integration examples](docs/integrations.md), [measurement limits](docs/measurement.md), and the [publication privacy review](docs/privacy-review.md).
 
-**Retirement does not reclaim capacity.** Trash and retained bundles remain charged to volume usage. Permanent disposal is a separate user decision.
-
-To recover retired data, read its receipt and move the indicated bundle to a separate safe folder on the same volume; inspect it there. Do not overwrite an existing path, edit the ownership registry, or put the bundle back under active scratch. Unknown, active or replaced directories are preserved, not adopted for cleanup.
-
-## Safety boundary
-
-- Cleanup authority comes from the private registry plus root identity, not a writable marker, name pattern or age.
-- Symlinked/unowned state, inode replacement, corrupt records, failed measurements, cross-volume retirement and unavailable liveness evidence refuse unsafe operations.
-- Normal completion, command failure and interruption stop the managed group before retirement. Killing the outer wrapper closes a controller pipe and denies/stops its managed child.
-- If the controller itself is killed and its process identity is lost, the guard preserves scratch and its reservation rather than signal a potentially unrelated group. Remaining writers may require operator intervention. Deliberately detached processes are outside the process-group guarantee.
-- Tests that deliberately remove read access inside scratch can trigger measurement failure and stop the run. Keep this compatibility constraint in mind for permission/error-injection suites; the guard never treats unreadable bytes as zero.
-- Writes outside owned temporary storage remain outside the scratch ceiling. Whole-volume pressure is checked separately. A fast write can consume space before a sample; a slow measurement has a bounded termination allowance. These are watchdog checks, not kernel quotas.
-- The wrapper is for cooperative development tools. A hostile process running as the same user can tamper with that user's state; use an existing sandbox or quota backend when an enforceable write boundary is required.
-
-A cleanup failure is not success: preserve the run and reservation, write the failure receipt when possible, and return a failing status. Corrupt/unwritable state can prevent a receipt; the command must still fail visibly. Receipt history is retained, not automatically pruned.
-
-## Exit codes
-
-Child exit status is preserved for ordinary completed runs. Guard refusal/budget pressure uses 75; measurement or cleanup failure uses 74; interruption follows the usual 128 + signal convention. A successful child can therefore result in a failing guard exit when cleanup or accounting did not complete.
-
-## Development and integration
+## Development
 
 ```sh
+uv sync --locked
 uv run pytest --collect-only -q
 uv run pytest -q
 uv build
 ```
 
-Tests use small real files and subprocesses, exercise concurrent starts, interruption, owner death, root replacement, corrupt state, sparse/hardlink accounting and permission failures. CI runs macOS and Linux on Python 3.11 and 3.13. No test should fill the host disk to simulate low space.
-
-See [integration examples](docs/integrations.md), [measurement details](docs/measurement.md), [monitoring](docs/monitoring.md) and [developer instructions](AGENTS.md). Installation does not rewrite other agents' commands or install global agent hooks. Wrap concrete test/build commands with `run` to enforce their scratch budgets.
+Tests use small real files/processes; CI covers macOS and Linux with Python 3.11 and 3.13. See [AGENTS.md](AGENTS.md), [reuse decisions](docs/reuse.md), [acknowledgements](ACKNOWLEDGEMENTS.md) and [third-party notices](THIRD_PARTY_NOTICES.md).

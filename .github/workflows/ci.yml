@@ -25,6 +25,11 @@ jobs:
       - run: uv sync --locked
       - run: uv run pytest --collect-only -q
       - run: uv run pytest -q
+      - name: Validate bundled macOS cleanup helper
+        if: runner.os == 'macOS'
+        run: |
+          zsh -n skills/sweep-computer-disk/scripts/retire-worktree-dependencies.zsh
+          zsh skills/sweep-computer-disk/tests/test-retire-worktree-dependencies.zsh
       - run: uv build
       - name: Verify distribution notices
         run: |
