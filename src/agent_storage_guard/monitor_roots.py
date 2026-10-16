@@ -34,7 +34,7 @@ def validate(raw: object) -> dict:
     roots = config.get("roots")
     if not isinstance(roots, list) or len(roots) > 32:
         raise ValueError("roots must be a list of at most 32 bounded directories")
-    protected = Path.home() / "Library/Application Support/Nest"
+    protected = Path.home() / "Library/Application Support"
     for spec in roots:
         if not isinstance(spec, dict) or not isinstance(spec.get("path"), str):
             raise ValueError("each root requires a path")
@@ -42,7 +42,7 @@ def validate(raw: object) -> dict:
         if not path.is_absolute() or ".." in path.parts:
             raise ValueError("scan roots must be absolute without parent traversal")
         if path == protected or path in protected.parents or protected in path.parents:
-            raise ValueError("choose narrower scan roots outside the protected Nest directory")
+            raise ValueError("choose narrower scan roots outside the protected application data directory")
         if type(spec.get("depth", 1)) is not int or not 0 <= spec.get("depth", 1) <= 4:
             raise ValueError("root depth must be an integer between 0 and 4")
         groups = spec.get("prefix_groups", [])

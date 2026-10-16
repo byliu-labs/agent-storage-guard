@@ -55,7 +55,7 @@ Accounting values include allocated blocks and native hardlink semantics. APFS c
 
 ## Configuration and scheduling
 
-`monitor init --root /absolute/path` selects explicit roots. Defaults cover existing development/agent/cache directories and macOS temporary directories, rather than scanning the entire home or protected application data. Nest paths, ancestors and descendants are refused. Symlink traversal and ambiguous native output are coverage gaps. macOS's system `/var` alias is handled while preserving configured history keys.
+`monitor init --root /absolute/path` selects explicit roots. Defaults cover existing development/agent/cache directories and macOS temporary directories, rather than scanning the entire home or protected application data. Private `~/Library/Application Support` paths, ancestors and descendants are refused. Symlink traversal and ambiguous native output are coverage gaps. macOS's system `/var` alias is handled while preserving configured history keys.
 
 `state/monitor/config.json` holds reserve/growth thresholds in bytes, scan timeouts, integer scan/probe intervals, and roots with depth 0–4. A root can set `prefix_groups` to a list of literal name prefixes with depth 1; this aggregates many temporary folders without per-file history. Legacy boolean grouping is supported only for the older prototype's migration.
 

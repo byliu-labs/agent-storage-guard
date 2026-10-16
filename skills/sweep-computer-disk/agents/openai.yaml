@@ -1,0 +1,3 @@
+interface:
+  display_name: "Sweep Computer Disk"
+  short_description: "Audit large files and propose safe cleanup"

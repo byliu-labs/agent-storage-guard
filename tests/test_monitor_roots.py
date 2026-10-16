@@ -20,9 +20,9 @@ def test_invalid_policy_is_rejected(field, value):
 
 
 def test_protected_application_roots_and_descendants_are_rejected():
-    protected = Path.home() / "Library/Application Support/Nest"
-    for root in [Path.home(), protected, protected / "data"]:
-        with pytest.raises(ValueError, match="Nest"):
+    protected = Path.home() / "Library/Application Support"
+    for root in [Path.home(), protected, protected / "ExampleApp", protected / "ExampleApp/data"]:
+        with pytest.raises(ValueError, match="application data"):
             validate({**defaults([]), "roots": [{"path": str(root)}]})
 
 
