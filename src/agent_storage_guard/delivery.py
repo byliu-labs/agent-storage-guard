@@ -113,39 +113,93 @@ def _number(value: object) -> float | None:
     return None
 
 
+def _disk_change(capacity: dict, history: list[dict], fresh: bool) -> tuple[float | None, float | None]:
+    identity = ("volume_device", "volume_path", "total_bytes")
+    if not fresh or any(capacity.get(k) is None for k in identity) or _number(capacity.get("used_bytes")) is None:
+        return None, None
+    candidates = [sample for sample in history
+                  if all(sample.get(k) == capacity[k] for k in identity)
+                  and _number(sample.get("time")) is not None
+                  and 0 < capacity["time"] - sample["time"] <= 86400
+                  and _number(sample.get("used_bytes")) is not None]
+    if not candidates:
+        return None, None
+    baseline = min(candidates, key=lambda sample: sample["time"])
+    return round((capacity["used_bytes"] - baseline["used_bytes"]) / 1024 ** 3, 1), capacity["time"] - baseline["time"]
+
+
+def _coverage_counts(scan: dict, config: dict) -> dict:
+    groups = scan.get("groups", {})
+    roots = [item["path"] for item in config.get("roots", [])]
+    if not roots:
+        roots = [key for key in groups if not any(str(parent) in groups for parent in Path(key).parents)]
+    counts = dict(total=len(roots), complete=0, permission_denied=0, timed_out=0, other=0)
+    for root in roots:
+        group = groups.get(root, {})
+        if group.get("complete"):
+            counts["complete"] += 1
+            continue
+        permission = group.get("error_kind") == "permission_denied"
+        legacy_timeout = "timed_out" not in group and group.get("error", "").startswith(("Folder scan exceeded deadline", "Total folder scan deadline reached"))
+        timed_out = bool(group.get("timed_out")) or group.get("error_kind") == "deadline" or legacy_timeout
+        counts["permission_denied"] += int(permission)
+        counts["timed_out"] += int(timed_out)
+        counts["other"] += int(not permission and not timed_out)
+    return counts
+
+
+_ACTIONS = {
+    "memory": "Open Activity Monitor > Memory, sort by Memory and inspect the largest processes; save work before quitting unused apps normally.",
+    "reserve": "Pause large builds; review recent growers in the private local report and preserve unfinished work before moving reviewed finished outputs.",
+    "growth": "Open the private local report's recent growers, compare the time window, preserve source and unfinished work, and review finished outputs before moving them.",
+    "coverage": "Open the private local report to review scan coverage; preserve previous baselines until incomplete locations can be measured.",
+}
+
+
 def remote_payload(alert: dict, snapshot: dict, config: dict, *, synthetic: bool = False) -> dict:
     """Construct an allowlist, never reuse private alert prose, keys or paths."""
     capacity, scan = snapshot.get("capacity", {}), snapshot.get("scan", {})
     now = snapshot["time"]
-    capacity_fresh = 0 <= now - capacity.get("time", -math.inf) <= config.get("tick_interval_seconds", 300) * 2.5
-    observed = _number(alert.get("observed_at"))
-    groups = scan.get("groups", {})
+    fresh = 0 <= now - capacity.get("time", -math.inf) <= config.get("tick_interval_seconds", 300) * 2.5
+    key = alert.get("key", "")
+    reason = "growth" if key.startswith("growth:") else key if key in _ACTIONS else "coverage"
+    counts = _coverage_counts(scan, config)
     coverage = "unknown"
     if scan:
-        coverage = "complete" if groups and all(g.get("complete") for g in groups.values()) else "partial"
+        coverage = "complete" if counts["total"] and counts["complete"] == counts["total"] else "partial"
         if not 0 <= now - scan.get("time", -math.inf) <= config.get("scan_interval_seconds", 3600) * 2.5:
             coverage = "stale"
-    free = _number(capacity.get("free_bytes")) if capacity_fresh else None
+    free = _number(capacity.get("free_bytes")) if fresh else None
     growth = _number(alert.get("delta_bytes"))
-    pressure = capacity.get("memory", {}).get("pressure") if capacity_fresh else None
-    action = ("Review the private local report and all material storage areas; preserve active work "
-              "before moving reviewed outputs to another volume.")
-    if alert.get("key") == "memory":
-        action = "Save active work; review Activity Monitor Memory on the monitored Mac and quit unused apps normally."
+    pressure = capacity.get("memory", {}).get("pressure") if fresh else None
+    change, elapsed = _disk_change(capacity, snapshot.get("capacity_history", []), fresh)
+    action = _ACTIONS[reason]
+    if counts["permission_denied"]:
+        action += "\nScan access: review access permissions for Agent Storage Guard in System Settings > Privacy & Security > Full Disk Access, then rerun the scan."
+    if counts["timed_out"]:
+        action += "\nScan timeout: rerun the scan; if deadlines persist, narrow configured roots or review scan budgets."
     if synthetic:
-        action = "Synthetic test only; no host measurement was taken. Confirm receipt in this test group; review the private report for real conditions."
-    return {"label": config.get("operator_label", "Storage monitor"),
+        action = "Synthetic test only; no host measurement was taken. Confirm this test message arrived; review the private report for real conditions."
+    return {"label": config.get("operator_label", "Storage monitor"), "reason": reason,
             "severity": alert["level"] if alert.get("level") in {"info", "warning", "urgent"} else "info",
-            "measured_at": observed, "free_gib": round(free / 1024 ** 3, 1) if free is not None else None,
+            "measured_at": _number(alert.get("observed_at")),
+            "free_gib": round(free / 1024 ** 3, 1) if free is not None else None,
             "growth_gib": round(growth / 1024 ** 3, 1) if growth is not None else None,
+            "growth_elapsed_seconds": _number(alert.get("elapsed_seconds")),
+            "disk_change_gib": change, "disk_change_seconds": elapsed,
             "memory_pressure": pressure if pressure in {"normal", "warning", "critical"} else "unknown",
-            "coverage": coverage, "next_action": action}
+            "coverage": coverage, "coverage_counts": counts, "next_action": action}
+
+
+def _period(seconds: float | None) -> str:
+    return f" over {seconds / 3600:.1f} hours" if seconds is not None and seconds > 0 else " (measurement period unavailable)"
 
 
 def remote_text(payload: dict, *, synthetic: bool = False) -> str:
     """Present only the reconstructed allowlist, never the private alert itself."""
     heading = "TEST ALERT" if synthetic else payload["severity"].upper()
-    lines = [f"{payload['label']} — {heading}"]
+    reason = {"memory":"Memory pressure", "reserve":"Low free space", "growth":"Folder growth", "coverage":"Incomplete scan"}[payload["reason"]]
+    lines = [f"{payload['label']} — {heading}", "Reason: " + reason]
     if synthetic:
         lines.append("Sample values • no host measurement")
     measured = payload["measured_at"]
@@ -153,12 +207,16 @@ def remote_text(payload: dict, *, synthetic: bool = False) -> str:
         stamp = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(measured)) if measured is not None else "Unavailable"
     except (OverflowError, ValueError, OSError):
         stamp = "Unavailable"
-    free, growth = payload["free_gib"], payload["growth_gib"]
+    free, growth, change = payload["free_gib"], payload["growth_gib"], payload["disk_change_gib"]
+    counts = payload["coverage_counts"]
     lines.extend(["", f"Free space: {free:.1f} GiB" if free is not None else "Free space: Unavailable",
-                  f"Storage growth: +{growth:.1f} GiB" if growth is not None else "Storage growth: Unavailable",
+                  f"Disk use change: {change:+.1f} GiB" + _period(payload["disk_change_seconds"]) if change is not None else
+                  "Disk use change: Unavailable; waiting for a second comparable measurement (up to 24 hours).",
+                  *([f"Storage growth: +{growth:.1f} GiB" + _period(payload["growth_elapsed_seconds"]) if growth is not None else "Storage growth: Unavailable"] if payload["reason"] == "growth" or synthetic else []),
                   f"Memory pressure: {payload['memory_pressure'].capitalize()}",
-                  f"Scan coverage: {payload['coverage'].capitalize()}", f"Measured: {stamp}",
-                  "", "Next step: " + payload["next_action"]])
+                  f"Scan coverage: {payload['coverage'].capitalize()} — {counts['complete']}/{counts['total']} roots complete; "
+                  f"{counts['permission_denied']} permission gaps, {counts['timed_out']} deadline gaps, {counts['other']} other/unknown gaps",
+                  f"Measured: {stamp}", "", "Next step: " + payload["next_action"]])
     return "\n".join(lines)
 
 
@@ -229,10 +287,14 @@ def test_send(store, config: dict, destination: str) -> tuple[dict, int]:
     spec = next(s for s in destinations(config) if s["id"] == destination)
     now = time.time()
     alert = {"key": "reserve", "level": "urgent", "observed_at": now,
-             "delta_bytes": 3 * 1024 ** 3,
+             "delta_bytes": 3 * 1024 ** 3, "elapsed_seconds": 7200,
              "title": "Storage monitor test", "message": "Synthetic test; review the private local report."}
-    snapshot = {"time": now, "capacity": {"time": now, "free_bytes": 8 * 1024 ** 3,
-                "memory": {"pressure": "critical"}}, "scan": {"time": now, "groups": {"synthetic": {"complete": False}}}}
+    capacity = {"time": now, "free_bytes": 8 * 1024 ** 3, "used_bytes": 92 * 1024 ** 3,
+                "total_bytes": 100 * 1024 ** 3, "volume_device": 0, "volume_path": "/synthetic-test",
+                "memory": {"pressure": "critical"}}
+    snapshot = {"time": now, "capacity": capacity,
+                "capacity_history": [{**capacity, "time": now - 7200, "used_bytes": 89 * 1024 ** 3}],
+                "scan": {"time": now, "groups": {"synthetic": {"complete": False}}}}
     ledger = store.get_value("delivery_state", {})
     legacy = store.get_value("alert_policy", {})
     entry = _entry(ledger, spec, legacy)

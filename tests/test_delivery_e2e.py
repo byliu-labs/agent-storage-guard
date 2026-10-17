@@ -95,6 +95,7 @@ def test_cli_test_send_is_synthetic_and_does_not_acknowledge_real_alerts(tmp_pat
         assert text.startswith("CI monitor — TEST ALERT")
         assert "Sample values • no host measurement" in text
         assert "Free space: 8.0 GiB" in text
+        assert "Disk use change: +3.0 GiB over 2.0 hours" in text
         assert "Storage growth: +3.0 GiB" in text
         assert "Memory pressure: Critical" in text
         assert "Scan coverage: Partial" in text
@@ -213,3 +214,30 @@ def test_deliberate_test_during_native_upgrade_preserves_existing_cooldown(tmp_p
     with MonitorStore(directory) as store:
         assert delivery.dispatch(store, config, [alert], legacy, {}, now + 1)
     assert len(sent) == 1  # Only the deliberate synthetic test, no real-alert repeat.
+
+
+
+
+def test_memory_http_alert_explains_real_persisted_disk_history_and_partial_scan(tmp_path, monkeypatch):
+    directory, config = configured(tmp_path, monkeypatch)
+    config["destinations"] = config["destinations"][:1]
+    now = time.time()
+    root = config["roots"][0]["path"]
+    common = {"total_bytes":100*1024**3,"volume_device":42,"volume_path":str(tmp_path),
+              "memory":{"pressure":"critical"}}
+    with MonitorStore(directory) as store:
+        store.record_capacity({**common,"time":now-7200,"used_bytes":20*1024**3,"free_bytes":80*1024**3})
+        store.record_capacity({**common,"time":now,"used_bytes":30*1024**3,"free_bytes":70*1024**3})
+        store.record_scan({root:{"complete":False,"error_kind":"permission_denied","error":"PRIVATE_FIXTURE"}},70*1024**3,now=now)
+        snapshot = monitor.snapshot(store,config)
+    alert={"key":"memory","level":"urgent","observed_at":now,"valid_until":now+750,"fingerprint":"urgent"}
+    with provider(monkeypatch,[200]) as requests:
+        with MonitorStore(directory) as store:
+            assert delivery.dispatch(store,config,[alert],{},snapshot,now)
+        text=requests[0][1]["content"]["text"]
+        assert "Reason: Memory" in text
+        assert "Disk use change: +10.0 GiB over 2.0 hours" in text
+        assert "Storage growth: Unavailable" not in text
+        assert "0/1 roots complete; 1 permission gaps" in text
+        assert "sort by Memory" in text and "access permissions" in text
+        assert str(tmp_path) not in text and "PRIVATE_FIXTURE" not in text

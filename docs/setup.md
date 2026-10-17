@@ -131,26 +131,59 @@ and tests use synthetic data. Do not attach local state to the PR. See
 These opt-in setup/test commands do not authorize cleanup, database changes,
 process termination or inventory uploads.
 
-## Readable remote alerts
+## Identify each monitored computer
 
-Feishu and iMessage show a short text summary, for example:
+Set a short source label before activating each computer:
 
-```text
-Storage monitor — TEST ALERT
-Sample values • no host measurement
-
-Free space: 8.0 GiB
-Storage growth: +3.0 GiB
-Memory pressure: Critical
-Scan coverage: Partial
-Measured: 2026-01-01 00:00 UTC
-
-Next step: Synthetic test only; no host measurement was taken. Confirm receipt in this test group; review the private report for real conditions.
+```sh
+agent-storage-guard monitor configure --label "Laptop"
+# On the other computer:
+agent-storage-guard monitor configure --label "Build Mac"
 ```
 
-Real alerts use their severity in the heading. Missing measurements say
-`Unavailable`; partial and stale coverage remain explicit. Presentation uses the
-same strict outbound allowlist; private paths and alert prose are never included.
-After updating, rerun `uv tool install --reinstall .` and `monitor install` before
-an explicit installed test. Existing Keychain credentials remain in place; setup
-does not need to be repeated.
+Changing the label sends nothing and preserves roots, destinations, credentials,
+and history. Choose a label you are comfortable sharing with the configured
+recipients. Hostnames and account names are never copied into it automatically.
+A package installation alone is not an active monitor: each computer also needs
+its own initialized roots, destination settings, activated jobs, and fresh samples.
+Review `monitor status` and the local installation manifest on each host.
+
+## Readable remote alerts
+
+Feishu and iMessage identify the source and reason, for example:
+
+```text
+Laptop — URGENT
+Reason: Low free space
+
+Free space: 22.0 GiB
+Disk use change: -10.5 GiB over 24.0 hours
+Memory pressure: Warning
+Scan coverage: Partial — 7/9 roots complete; 2 permission gaps, 0 deadline gaps, 0 other/unknown gaps
+Measured: 2026-01-01 00:00 UTC
+
+Next step: Pause large builds; review recent growers in the private local report and preserve unfinished work before moving reviewed finished outputs.
+```
+
+Disk use change comes from comparable capacity samples on the same volume within
+24 hours; its sign distinguishes increased usage from reclaimed space. Folder
+growth has its own interval and is shown on folder-growth alerts, rather than
+showing a misleading unavailable folder metric on reserve or memory alerts.
+A first sample, changed volume, or stale capacity cannot establish a change.
+
+Coverage counts refer to configured roots, not every nested row or the whole
+computer. Permission and deadline causes remain distinct; one root may have both.
+Actual errors, paths, per-folder timestamps and retained baselines stay in the
+private local report. Failed reads never become zero bytes or complete coverage.
+
+For permission gaps on macOS, review System Settings → Privacy & Security →
+Full Disk Access for the installed **Agent Storage Guard** app. If access is off,
+turn it back on and authenticate. A rebuilt native helper can require reapproval;
+updating Python-only code does not require rebuilding the helper. Do not grant
+blanket access to a shared Python interpreter. After approval, rerun the scheduled
+scan through the installed helper and confirm its real root measurements.
+
+After updating, reinstall the CLI. Run `monitor install` when helper code, paths,
+or schedules changed; unchanged helpers are reused. Existing Keychain settings
+remain in place. Explicit test sends are optional and must be requested deliberately;
+normal tests use synthetic data and local HTTP servers.

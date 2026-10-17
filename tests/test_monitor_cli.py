@@ -151,3 +151,34 @@ def test_report_command_refreshes_current_status_and_prints_html_location(tmp_pa
         assert store.latest_capacity()["total_bytes"] > 0
         assert store.latest_capacity()["free_bytes"] > 0
         assert not store.latest_scan()  # Opening never starts a slow parallel scan.
+
+
+def test_configured_host_labels_preserve_history_and_never_send(tmp_path):
+    from agent_storage_guard import delivery, monitor
+    from agent_storage_guard.monitor_store import MonitorStore
+    state = tmp_path / "state"
+    assert invoke(state, "init", "--root", str(tmp_path / "project")).returncode == 0
+    db = state / "monitor/monitor.sqlite3"
+    before = db.read_bytes()
+    for label in ("Laptop", "Build Mac"):
+        result = invoke(state, "configure", "--label", label)
+        assert result.returncode == 0, result.stderr
+        assert db.read_bytes() == before
+        config = monitor.load_config(state / "monitor")
+        assert config["operator_label"] == label
+        with MonitorStore(state / "monitor") as store:
+            snapshot = monitor.snapshot(store, config)
+        text = delivery.remote_text(delivery.remote_payload({"key":"reserve", "level":"urgent"}, snapshot, config))
+        assert text.startswith(label + " — URGENT")
+        before = db.read_bytes()
+
+
+def test_invalid_host_label_does_not_change_configuration(tmp_path):
+    state = tmp_path / "state"
+    assert invoke(state, "init", "--root", str(tmp_path / "project")).returncode == 0
+    path = state / "monitor/config.json"
+    before = path.read_bytes()
+    result = invoke(state, "configure", "--label", "PRIVATE/path")
+    assert result.returncode != 0
+    assert "PRIVATE" not in result.stderr
+    assert path.read_bytes() == before

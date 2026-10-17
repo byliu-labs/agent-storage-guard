@@ -38,7 +38,8 @@ Edit the private `STATE/monitor/config.json`, retaining its existing fields:
 
 The example above is a configuration fragment, not a replacement for the entire
 configuration. The label is included remotely: use a non-identifying name, without
-hostnames, account names, projects or locations. IDs and credential references are
+automatically collecting hostnames, account names or private paths. Set it with
+`monitor configure --label "Laptop"` (use another short label on each host). IDs and credential references are
 local. Use a new destination ID when changing the recipient behind a credential
 reference, so the new recipient does not inherit the old recipient's cooldown.
 
@@ -113,7 +114,8 @@ to configured destinations. Plain scans, status, reports and configuration check
 never send. Installation remains an explicit step described in the CI recipe.
 
 Remote text is a readable summary built only from these fields: non-identifying
-operator label, severity, measurement time, free GiB, growth GiB, memory pressure,
+operator label, reason, severity, measurement time, free GiB, comparable disk-use
+change and interval, folder growth and interval where applicable, memory pressure,
 coverage and a fixed safe next action. Capacities are rounded to tenths of a GiB;
 unknown measurements display Unavailable/Unknown, and old scan coverage is marked stale.
 Private alert titles, paths, filenames, repository and branch names, hostnames,

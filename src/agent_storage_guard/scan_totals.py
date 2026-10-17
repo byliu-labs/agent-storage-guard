@@ -96,7 +96,7 @@ class ScanTotals:
             item["observed_at"] = observed
             if key in bad:
                 item.update(complete=False, children_complete=False, error=failure,
-                            error_kind=self.error_kind or ("deadline" if stopped else "io_error"))
+                            error_kind=self.error_kind or ("deadline" if stopped else "io_error"), timed_out=bool(stopped))
             if self.details_limited:
                 item["children_complete"] = False
                 item["detail_note"] = "Folder detail limit reached; complete root accounting retained"

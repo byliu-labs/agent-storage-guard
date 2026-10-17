@@ -63,6 +63,8 @@ def parser() -> argparse.ArgumentParser:
     setup.add_argument("--provider", choices=("feishu", "imessage"), required=True)
     setup.add_argument("--destination", help="new destination id; defaults to provider name")
     setup.add_argument("--root", type=Path, action="append", help="custom root for a new monitor; repeatable")
+    configure = monitoring.add_parser("configure", help="set a non-identifying alert source label without sending")
+    configure.add_argument("--label", required=True, help="short source label, for example Laptop or Build Mac")
     migration = monitoring.add_parser("migrate", help="import legacy pc-backup JSON history without changing its source")
     migration.add_argument("--from-state", type=Path, required=True)
     for name in ("tick", "scan", "status"):

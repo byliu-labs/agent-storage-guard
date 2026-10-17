@@ -228,7 +228,15 @@ def dispatch(args) -> int:
                 payload, code = delivery.installed_test(Path(app), args.destination, args.state)
             print(json.dumps(payload, indent=2))
             return code
-        if action == "install":
+        if action == "configure":
+            from . import delivery
+            with locked(directory, "policy.lock"):
+                config = load_config(directory)
+                config["operator_label"] = args.label
+                delivery.validate_config(config)
+                ownership.write_json(directory / "config.json", config)
+            payload = {"operator_label": args.label}
+        elif action == "install":
             from . import installation, notifications
             from .monitor_store import MonitorStore
             executable = Path(shutil.which("agent-storage-guard") or sys.argv[0]).absolute()

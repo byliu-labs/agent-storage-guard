@@ -15,10 +15,11 @@ def test_remote_payload_reconstructs_only_allowed_measurements():
                 "scan": {"time": 1000, "groups": {private: {"complete": False}}},
                 "config": {"roots": [private]}, "exception": private}
     result = delivery.remote_payload(alert, snapshot, {"operator_label": "CI monitor"})
-    assert result == {"label": "CI monitor", "severity": "warning", "measured_at": 1000,
-                      "free_gib": 20.0, "growth_gib": 3.0, "memory_pressure": "critical",
-                      "coverage": "partial", "next_action":
-                      "Review the private local report and all material storage areas; preserve active work before moving reviewed outputs to another volume."}
+    assert result == {"label": "CI monitor", "reason":"growth", "severity": "warning", "measured_at": 1000,
+                      "free_gib": 20.0, "growth_gib": 3.0, "growth_elapsed_seconds":None,
+                      "disk_change_gib":None,"disk_change_seconds":None,"memory_pressure": "critical",
+                      "coverage": "partial", "coverage_counts":{"total":1,"complete":0,"permission_denied":0,"timed_out":0,"other":1},
+                      "next_action": "Open the private local report's recent growers, compare the time window, preserve source and unfinished work, and review finished outputs before moving them."}
     assert "PRIVATE" not in json.dumps(result)
 
 
@@ -71,8 +72,77 @@ def test_readable_remote_text_preserves_unknown_measurements_and_privacy():
     text = delivery.remote_text(payload)
     assert text.startswith("Storage monitor — WARNING")
     assert "Free space: Unavailable" in text
-    assert "Storage growth: Unavailable" in text
+    assert "waiting for a second comparable measurement" in text
     assert "Memory pressure: Unknown" in text
     assert "Scan coverage: Unknown" in text
     assert "1970-01-01 00:00 UTC" in text
     assert "PRIVATE_FIXTURE" not in text and "private/path" not in text
+
+
+def capacity(time, used, **extra):
+    return {"time": time, "used_bytes": used * 1024 ** 3, "free_bytes": (100-used) * 1024 ** 3,
+            "total_bytes": 100 * 1024 ** 3, "volume_device": 42, "volume_path": "/synthetic", **extra}
+
+
+@pytest.mark.parametrize("used,expected", [(30, 10.0), (10, -10.0)])
+def test_memory_alert_explains_actual_signed_disk_change_and_period(used, expected):
+    current = capacity(100000, used, memory={"pressure":"critical"})
+    history = [capacity(100, 1), capacity(90000,20), capacity(99000,25),
+               capacity(80000,99,volume_device=43), capacity(85000,99,total_bytes=200*1024**3)]
+    payload = delivery.remote_payload({"key":"memory","level":"urgent","observed_at":100000},
+        {"time":100000,"capacity":current,"capacity_history":history}, {})
+    assert payload["reason"] == "memory"
+    assert payload["disk_change_gib"] == expected
+    assert payload["disk_change_seconds"] == 10000
+    text = delivery.remote_text(payload)
+    assert f"Disk use change: {expected:+.1f} GiB over 2.8 hours" in text
+    assert "sort by Memory" in text and "save work" in text
+
+
+def test_disk_change_requires_fresh_comparable_measurements():
+    alert = {"key":"reserve","level":"urgent","observed_at":100000}
+    for history in ([], [capacity(100000,20)], [capacity(90000,20,volume_device=7)],
+                    [capacity(90000,20,volume_path="/other")], [capacity(100,20)]):
+        result = delivery.remote_payload(alert,{"time":100000,"capacity":capacity(100000,30),"capacity_history":history},{})
+        assert result["disk_change_gib"] is None
+        assert "waiting for a second comparable measurement" in delivery.remote_text(result)
+    stale = delivery.remote_payload(alert,{"time":102000,"capacity":capacity(100000,30),"capacity_history":[capacity(90000,20)]},{})
+    assert stale["disk_change_gib"] is None
+
+
+def test_partial_coverage_counts_only_configured_roots_and_forwards_no_paths():
+    groups = {"/private-root": {"complete":False,"error_kind":"permission_denied","error":"PRIVATE"},
+              "/private-root/child":{"complete":False,"error_kind":"permission_denied"},
+              "/slow-root":{"complete":False,"timed_out":True},
+              "/good-root":{"complete":True}}
+    config={"roots":[{"path":p} for p in ("/private-root","/slow-root","/good-root","/missing-root")]}
+    payload=delivery.remote_payload({"key":"coverage","level":"info"},{"time":1000,"scan":{"time":1000,"groups":groups}},config)
+    assert payload["coverage_counts"] == {"total":4,"complete":1,"permission_denied":1,"timed_out":1,"other":1}
+    text=delivery.remote_text(payload)
+    assert "1/4 roots complete" in text and "permission" in text and "deadline" in text
+    assert "/private-root" not in text and "PRIVATE" not in text
+    assert "access" in payload["next_action"] and "budget" in payload["next_action"]
+
+
+def test_coverage_without_configured_roots_ignores_nested_groups():
+    payload=delivery.remote_payload({"key":"coverage","level":"info"},{"time":1000,"scan":{"time":1000,"groups":{
+        "/root":{"complete":False,"timed_out":True},"/root/child":{"complete":True}}}}, {})
+    assert payload["coverage_counts"]["total"] == 1
+
+
+def test_growth_keeps_alert_delta_and_explicit_period():
+    payload=delivery.remote_payload({"key":"growth:/PRIVATE","level":"warning","delta_bytes":3*1024**3,
+        "elapsed_seconds":7200},{"time":100000,"capacity":capacity(100000,30),"capacity_history":[capacity(90000,20)]},{})
+    assert payload["growth_gib"] == 3.0
+    assert payload["growth_elapsed_seconds"] == 7200
+    assert "Storage growth: +3.0 GiB over 2.0 hours" in delivery.remote_text(payload)
+    assert "compare" in payload["next_action"] and "source" in payload["next_action"]
+
+
+def test_legacy_scan_retains_both_deadline_and_permission_summary_without_raw_errors():
+    private="PRIVATE /Users/example/private-folder"
+    snapshot={"time":1000,"scan":{"time":1000,"groups":{"/synthetic/root":{"complete":False,"error_kind":"permission_denied","error":"Folder scan exceeded deadline; Permission denied: "+private}}}}
+    payload=delivery.remote_payload({"key":"memory","level":"warning"},snapshot,{})
+    assert payload["coverage_counts"]["permission_denied"]==1
+    assert payload["coverage_counts"]["timed_out"]==1
+    assert private not in json.dumps(payload)
