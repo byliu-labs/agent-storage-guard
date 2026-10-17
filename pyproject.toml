@@ -1,6 +1,6 @@
 [project]
 name = "agent-storage-guard"
-version = "0.3.4"
+version = "0.3.5"
 description = "Local workstation storage and memory alerts, growth history and managed scratch budgets"
 license = "MIT"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]

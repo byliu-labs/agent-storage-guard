@@ -5,6 +5,18 @@ import pytest
 from agent_storage_guard import delivery
 
 
+def test_native_alert_titles_identify_the_host_without_mutating_evidence(monkeypatch, tmp_path):
+    from agent_storage_guard import notifications
+    sent = []
+    monkeypatch.setattr(notifications, "notify", lambda alert, **kwargs: sent.append(alert))
+    alert = {"key": "reserve", "title": "Low disk space", "message": "Preserve active work."}
+    for label in ("Laptop", "Tokyo mini"):
+        delivery._send({"provider": "native"}, alert, {}, {"operator_label": label}, None, tmp_path)
+    assert [item["title"] for item in sent] == ["Laptop — Low disk space", "Tokyo mini — Low disk space"]
+    assert all(item["key"] == "reserve" and item["message"] == alert["message"] for item in sent)
+    assert alert["title"] == "Low disk space"
+
+
 def test_remote_payload_reconstructs_only_allowed_measurements():
     private = "PRIVATE /Users/example/repository feature-name token=credential"
     alert = {"key": "growth:" + private, "level": "warning", "observed_at": 1000,

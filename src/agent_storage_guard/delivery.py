@@ -225,7 +225,8 @@ def _send(spec: dict, alert: dict, snapshot: dict, config: dict, app: str | None
     from .delivery_transports import DeliveryError, send
     if spec["provider"] == "native":
         try:
-            notifications.notify(alert, app=Path(app) if app else None, report_path=state / "report.html")
+            labeled = {**alert, "title": f"{config.get('operator_label', 'Storage monitor')} — {alert['title']}"}
+            notifications.notify(labeled, app=Path(app) if app else None, report_path=state / "report.html")
         except (RuntimeError, OSError, subprocess.SubprocessError):
             raise DeliveryError("native_unavailable", True) from None
     else:

@@ -132,6 +132,7 @@ def test_native_cooldown_survives_upgrade_and_recovery_rearms_alert(tmp_path, mo
     config.pop("destinations")
     now = time.time()
     alert = {"key": "reserve", "level": "urgent", "observed_at": now,
+             "title": "Low disk space", "message": "Preserve active work.",
              "valid_until": now + 750, "fingerprint": "urgent"}
     legacy = alerts.mark_delivered({}, alert, now)
     sent = []
@@ -143,6 +144,7 @@ def test_native_cooldown_survives_upgrade_and_recovery_rearms_alert(tmp_path, mo
         assert delivery.dispatch(store, config, [], {}, {}, now + 2)
         assert delivery.dispatch(store, config, [alert], {}, {}, now + 3)
     assert len(sent) == 1
+    assert sent[0]["title"] == "CI monitor — Low disk space"
 
 
 def test_escalation_bypasses_failed_warning_backoff(tmp_path, monkeypatch):

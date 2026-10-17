@@ -142,8 +142,10 @@ agent-storage-guard monitor configure --label "Build Mac"
 ```
 
 Changing the label sends nothing and preserves roots, destinations, credentials,
-and history. Choose a label you are comfortable sharing with the configured
-recipients. Hostnames and account names are never copied into it automatically.
+and history. New native notification titles and remote messages include the label;
+notifications already delivered keep their original text. Choose a label you are
+comfortable sharing with the configured recipients. Hostnames and account names
+are never copied into it automatically.
 A package installation alone is not an active monitor: each computer also needs
 its own initialized roots, destination settings, activated jobs, and fresh samples.
 Review `monitor status` and the local installation manifest on each host.
@@ -181,7 +183,14 @@ Full Disk Access for the installed **Agent Storage Guard** app. If access is off
 turn it back on and authenticate. A rebuilt native helper can require reapproval;
 updating Python-only code does not require rebuilding the helper. Do not grant
 blanket access to a shared Python interpreter. After approval, rerun the scheduled
-scan through the installed helper and confirm its real root measurements.
+scan through the installed helper and confirm its real root measurements. The
+HTML appendix and copied investigation prompt provide the exact quoted reader
+command and custom state path. They warn when that reader can send configured
+alerts; a direct CLI scan may not inherit the app's access.
+The scheduled request returns before the scan finishes: wait for a new folder
+measurement timestamp. A prepared helper needs activated jobs before this command
+can work. Apple describes the [responsible-code permission model](https://developer.apple.com/forums/thread/125438)
+that makes the launching context matter.
 
 After updating, reinstall the CLI. Run `monitor install` when helper code, paths,
 or schedules changed; unchanged helpers are reused. Existing Keychain settings

@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .investigation import refresh_commands
+
 GIB = 1024 ** 3
 
 
@@ -12,6 +14,7 @@ def timestamp(value: float | None) -> str:
 
 
 def render(payload: dict) -> str:
+    refresh = refresh_commands(payload)
     capacity, scan = payload.get("capacity", {}), payload.get("scan", {})
     memory, config = capacity.get("memory", {}), payload.get("config", {})
     lines = ["Agent Storage Guard — workstation report", "",
@@ -40,7 +43,7 @@ def render(payload: dict) -> str:
     lines.extend(["", f"Folder scan: {timestamp(scan.get('time'))}",
                   "GiB now | change since baseline | recent day change | folder"])
     if not scan or payload.get("time", 0) - scan.get("time", 0) > config.get("scan_interval_seconds", 3600) * 2.5:
-        lines.append("Folder evidence is missing or stale; run 'monitor scan' before making cleanup decisions.")
+        lines.append(f"Folder evidence is missing or stale; run {refresh['scan']} before making cleanup decisions. {refresh['note']}")
     changes = scan.get("changes", {})
     items = sorted(changes.items(), key=lambda x: x[1].get("day_delta_bytes", x[1].get("baseline_delta_bytes", 0)), reverse=True)
     for name, item in items[:30]:
@@ -51,7 +54,7 @@ def render(payload: dict) -> str:
     if gaps:
         lines.extend(["", "Scan coverage gaps — previous baselines preserved; missing bytes are unknown."])
         lines.extend(f"- {name}: {group.get('error', 'incomplete measurement')}" for name, group in gaps[:32])
-        lines.append("Next: choose narrower readable roots or review macOS Privacy access if you want these locations included.")
+        lines.append("Next: review macOS Privacy access for the installed reader. Refresh with: " + refresh["scan"] + ". " + refresh["note"])
     inventory = payload.get("worktrees", {})
     if inventory:
         lines.extend(["", "Git worktrees (read-only inventory; not cleanup approval)"])

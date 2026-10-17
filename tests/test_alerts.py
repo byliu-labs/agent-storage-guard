@@ -93,6 +93,9 @@ def test_growth_reports_actual_interval_and_deduplicates_parent_child():
     assert "worktrees" in a[0]["title"]
     assert "1.2 hours" in a[0]["message"]
     assert "Trash" in a[0]["action"]
+    from agent_storage_guard import delivery
+    remote = delivery.remote_payload(a[0], {"time": 1000, "scan": scan}, {})
+    assert "Storage growth: +3.0 GiB over 1.2 hours" in delivery.remote_text(remote)
     state = alerts.mark_delivered(state, a[0], 1000)
     a, state = step(capacity(1300, 80), state=state, scan=scan)
     assert not alerts.delivery_candidates(a, state, 1300)
