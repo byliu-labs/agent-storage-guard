@@ -183,6 +183,8 @@ def _agent_prompt(view: dict, report_path: str | None) -> str:
         lines.append(f"Check {json.dumps(row['path'], ensure_ascii=False)}{parent}: {_bytes(row['bytes'])}; "
                      f"{row['coverage']} at {_time(row['observed_at'])}; change {_bytes(row['delta_bytes'], signed=True)} "
                      f"over {_duration(row['period_elapsed_seconds'])}.")
+    refresh = view["appendix"]["refresh"]
+    lines.append("Refresh folder measurements with: " + refresh["scan"] + ". " + refresh["note"])
     gaps = view["appendix"]["coverage_gaps"]
     lines.append(f"Coverage gaps: {len(gaps)} (see full report for all locations). No comparable history means unknown, never zero.")
     for gap in gaps[:3]:
@@ -248,7 +250,10 @@ def _appendix(view: dict) -> str:
     context = {"schema_version": 1, "status": view["status"], "period": view["period"],
                "investigation": view["investigation"], "locations": view["locations"],
                "folders": data["folders"], "coverage_gaps": data["coverage_gaps"],
-               "worktrees": data.get("worktrees", {})}
+               "worktrees": data.get("worktrees", {}), "refresh": data["refresh"],
+               "reader_path": data.get("reader_path")}
+    refresh = data["refresh"]
+    refresh_html = "<br>".join(f"<code>{_text(refresh[key])}</code>" for key in ("capacity", "scan", "report"))
     folders = "".join(_folder_row(row) for row in data.get("folders", []))
     gaps = "".join(f'<li><code>{_text(gap.get("path"))}</code><br>{_text(gap.get("error"))}</li>'
                    for gap in data.get("coverage_gaps", [])) or "<li>No coverage gaps reported.</li>"
@@ -287,7 +292,7 @@ def _appendix(view: dict) -> str:
             <textarea id="agent-context" aria-label="Structured report evidence" rows="8" readonly>{_text(json.dumps(context, ensure_ascii=False, separators=(',', ':')))}</textarea>
           </details>
           <h3>Refresh this report</h3><p class="secondary">The installed monitor updates measurements on its schedule. To request a new capacity check and folder scan from Terminal:</p>
-          <p><code>agent-storage-guard monitor tick</code><br><code>agent-storage-guard monitor scan</code><br><code>agent-storage-guard monitor report --open</code></p>
+          <p>{refresh_html}</p><p class="secondary">{_text(refresh["note"])}</p>
           {memory_evidence}<h3>How to read this evidence</h3><ul class="caveats">{caveats}</ul>{inventory}
         </div></details>
     </section>'''

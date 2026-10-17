@@ -112,7 +112,7 @@ def _scan_alerts(scan: dict, config: dict, now: float) -> dict:
         active[key] = _alert(key, "warning", f"{_folder_name(path)} grew {delta / GIB:.1f} GiB",
             f"Measured over {elapsed / 3600:.1f} hours.",
             "Open the report; keep unfinished work and move disposable outputs to Trash after review.",
-            observed, lifetime, path, path=path, delta_bytes=delta, bytes=size, window=window)
+            observed, lifetime, path, path=path, delta_bytes=delta, bytes=size, window=window, elapsed_seconds=elapsed)
     return active
 
 
