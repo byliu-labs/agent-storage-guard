@@ -44,6 +44,10 @@ report and native-notification regressions remain in the full suite.
 
 ## Limits and remaining owner steps
 
+These limits describe this setup slice. The [later authorized iMessage test](issue-6-readable-alerts-imessage-fix.md#authorized-live-verification)
+records installed acceptance and owner-observed receipt; the Feishu gate below
+remains without a tracked live receipt.
+
 The live Feishu test-group gate from the earlier receipt remains. For iMessage,
 the owner must sign into Messages, choose an iMessage-capable recipient, authorize
 the actual installed sender under Automation, explicitly test-send and independently

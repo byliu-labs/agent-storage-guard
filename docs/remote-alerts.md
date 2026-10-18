@@ -165,12 +165,20 @@ Automated verification uses synthetic paths/settings, a real loopback HTTP serve
 real SQLite restarts and controlled native credential boundaries. Ordinary tests
 do not send to real Feishu/Lark groups or query real Keychain items.
 
-The outstanding deployment gates are an authorized dedicated test group, bot
-webhook/signing settings available to the installed process, permitted unattended
-Keychain/session access where selected, an explicitly authorized real test send,
-and independent observation in that group. No real Feishu/Lark receipt is claimed
-without those steps. iMessage additionally requires sign-in, approved Automation
-access for the installed identity and independently observed receipt. Current native
-tests use a controlled bridge/executable; real iMessage delivery is not verified.
+Feishu/Lark has protocol and integration-test evidence, but the tracked receipts
+do not establish live service acceptance or independently observed receipt.
+Its deployment gates remain an authorized dedicated test group, accessible
+webhook/signing settings, permitted unattended Keychain/session access, an
+explicitly authorized real test send, and independent observation in that group.
+
+The [later iMessage receipt](runs/issue-6-readable-alerts-imessage-fix.md#authorized-live-verification)
+records installed-sender acceptance and owner-observed receipt after code commit
+`38fbc4070f62e378df49b4ad756b18ec59348819`. This is historical evidence for that
+test and session, not proof that another host or a future session can deliver.
+Each new host still needs Messages sign-in, Automation approval for its installed
+identity, accessible recipient settings, and an independently observed test.
+Ordinary native tests use a controlled bridge/executable and cannot establish
+live iMessage receipt.
+
 Slack and WhatsApp still require implementation and provider-specific validation
 before issue #6 can be closed.
