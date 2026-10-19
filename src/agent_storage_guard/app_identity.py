@@ -3,6 +3,44 @@
 # The app owns the Python child for its entire lifetime. Never accept a script,
 # executable or state path from launcher arguments after granting OS access.
 MONITOR_SOURCE = r'''
+import CoreServices
+
+// Ask macOS for access under this app's identity, without sending an event or
+// accepting a recipient, script or arbitrary application target.
+func messagesAccess() -> Never {
+    let args = CommandLine.arguments
+    guard args.count == 3, ["check", "request"].contains(args[2]) else {
+        fputs("Expected --messages-access check|request.\n", stderr)
+        exit(64)
+    }
+    let action = args[2]
+    DispatchQueue.global().async {
+        let identifiers = ["com.apple.MobileSMS", "com.apple.iChat"]
+        guard let identifier = identifiers.first(where: {
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil
+        }) else {
+            print("{\"action\":\"\(action)\",\"status\":\"unavailable\",\"os_status\":-600}")
+            exit(69)
+        }
+        let target = NSAppleEventDescriptor(bundleIdentifier: identifier)
+        let status = AEDeterminePermissionToAutomateTarget(
+            target.aeDesc, AEEventClass(typeWildCard), AEEventID(typeWildCard), action == "request")
+        let label: String
+        let code: Int32
+        switch status {
+        case noErr: label = "allowed"; code = 0
+        case OSStatus(errAEEventNotPermitted): label = "denied"; code = 77
+        case OSStatus(errAEEventWouldRequireUserConsent): label = "consent_required"; code = 77
+        case OSStatus(procNotFound): label = "not_running"; code = 69
+        default: label = "error"; code = 74
+        }
+        print("{\"action\":\"\(action)\",\"status\":\"\(label)\",\"os_status\":\(status)}")
+        exit(code)
+    }
+    dispatchMain()
+}
+if CommandLine.arguments.dropFirst().first == "--messages-access" { messagesAccess() }
+
 func runMonitor() -> Never {
     let args = CommandLine.arguments
     guard args.count >= 3,

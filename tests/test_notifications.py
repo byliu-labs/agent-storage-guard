@@ -60,6 +60,19 @@ else:
     icon = app / "Contents/Resources" / manifest["CFBundleIconFile"]
     assert icon.read_bytes().startswith(b"icns")
     executable = app / "Contents/MacOS/Agent Storage Guard"
+    # A permission check never sends a message or prompts. It runs inside the
+    # signed, separately named test helper rather than Python/osascript.
+    result = subprocess.run([str(executable), "--messages-access", "check"], capture_output=True, text=True, timeout=20)
+    assert result.returncode in {0, 69, 77, 74}, result.stderr
+    access = json.loads(result.stdout)
+    assert access["action"] == "check"
+    assert access["status"] in {"allowed", "denied", "consent_required", "not_running", "unavailable", "error"}
+    assert isinstance(access["os_status"], int)
+    for args in (["--messages-access"], ["--messages-access", "other"],
+                 ["--messages-access", "request", "arbitrary-target"]):
+        result = subprocess.run([str(executable), *args], capture_output=True, text=True, timeout=10)
+        assert result.returncode == 64
+        assert not result.stdout
     inode = executable.stat().st_ino
     assert notifications.prepare_app(tmp_path / "sender", tmp_path / "report.html", cli, tmp_path / "state") == app
     assert executable.stat().st_ino == inode

@@ -88,8 +88,24 @@ and manually verify a blue-bubble conversation with the recipient. The adapter
 selects a connected iMessage account and implements no SMS/RCS fallback. Sign-in
 and account/session changes remain owner-operated. [Apple's Messages setup](https://support.apple.com/guide/messages/set-up-messages-ichte16154fb/mac).
 
-During the explicit installed test, approve the request to let the installed
-sender control Messages. Review **System Settings → Privacy & Security → Automation**.
+Before sending a test, request permission from the installed app in the Mac's
+logged-in desktop session, with Messages already open:
+
+```sh
+"$HOME/Applications/Agent Storage Guard.app/Contents/MacOS/Agent Storage Guard" --messages-access request
+```
+
+This uses Apple's permission API; it sends no Apple event or message and reads no
+conversation. macOS displays the named app's consent prompt when needed. Click
+**Allow**, then review **System Settings → Privacy & Security → Automation**.
+The app cannot grant itself access or insert an Automation entry without an OS
+request. If permission was already denied, enable **Messages** under the app in
+that pane. Use `--messages-access check` for a non-prompting check; the JSON result
+distinguishes `allowed`, `denied`, `consent_required`, `not_running`, `unavailable`
+and `error`, with the OS status preserved. Permission requests wait for the owner's
+decision separately from the send timeout. On an SSH-managed Mac, run the request
+under the installed app in its GUI launchd session, not under an SSH interpreter.
+
 Approving Terminal during a direct CLI test does not prove the installed sender has
 permission. This send-only integration does not use Accessibility, Screen Recording,
 Messages database access, an inbound server or Full Disk Access.
