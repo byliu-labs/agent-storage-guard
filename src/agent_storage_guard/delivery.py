@@ -10,8 +10,10 @@ import re
 import shutil
 import sys
 import subprocess
+import tempfile
 import time
 
+_OPEN = "/usr/bin/open"
 PROVIDERS = {"native", "feishu", "imessage"}
 _NAME = re.compile(r"[a-z][a-z0-9-]{0,39}\Z")
 _ENV = re.compile(r"[A-Z][A-Z0-9_]{0,79}\Z")
@@ -325,15 +327,25 @@ def installed_test(app: Path, destination: str, expected_state: Path) -> tuple[d
     if not isinstance(manifest, dict) or manifest.get("ASGMonitorState") != expected:
         raise RuntimeError("installed_helper_state_mismatch; rerun monitor install for this state")
     try:
-        result = subprocess.run([str(app / "Contents/MacOS/Agent Storage Guard"),
-                                 "--test-send", destination, expected], capture_output=True, text=True, timeout=30)
-        receipt = json.loads(result.stdout)
+        # A raw child can inherit its caller's TCC responsibility (e.g. uv),
+        # despite being a signed app. Launch Services starts the app independently.
+        # open does not propagate the app's exit status; validate its own receipt.
+        with tempfile.TemporaryDirectory(prefix="asg-installed-test-") as temporary:
+            stdout, stderr = (Path(temporary) / name for name in ("stdout", "stderr"))
+            for path in (stdout, stderr):
+                path.touch(mode=0o600)
+            result = subprocess.run([_OPEN, "-n", "-W", "-g", "-a", str(app),
+                                     "--stdout", str(stdout), "--stderr", str(stderr),
+                                     "--args", "--test-send", destination, expected],
+                                    capture_output=True, text=True, timeout=30)
+            if result.returncode:
+                raise ValueError("Launch Services failed")
+            receipt = json.loads(stdout.read_text())
     except (OSError, subprocess.SubprocessError, ValueError, RecursionError):
         raise RuntimeError("installed_helper_failed; check the installed identity and retry after approving required access") from None
     if (not isinstance(receipt, dict) or receipt.get("destination") != destination
             or receipt.get("synthetic") is not True or receipt.get("receipt") != "not_observed"
-            or receipt.get("acceptance") not in ("accepted", "failed")
-            or (result.returncode == 0) != (receipt["acceptance"] == "accepted")):
+            or receipt.get("acceptance") not in ("accepted", "failed")):
         raise RuntimeError("installed_helper_failed; no valid acceptance receipt")
     # Do not forward arbitrary helper stdout, stderr, raw errors or extra fields.
     safe = {"destination": destination, "synthetic": True,
@@ -343,4 +355,4 @@ def installed_test(app: Path, destination: str, expected_state: Path) -> tuple[d
         error = receipt.get("code")
         safe["code"] = error if isinstance(error, str) and error in _GATES else "delivery_failed"
         safe["next_action"] = _GATES.get(safe["code"], "Run monitor delivery-check for redacted provider details; correct the gate before retrying.")
-    return safe, int(result.returncode != 0)
+    return safe, int(receipt["acceptance"] != "accepted")

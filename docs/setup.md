@@ -105,6 +105,10 @@ distinguishes `allowed`, `denied`, `consent_required`, `not_running`, `unavailab
 and `error`, with the OS status preserved. Permission requests wait for the owner's
 decision separately from the send timeout. On an SSH-managed Mac, run the request
 under the installed app in its GUI launchd session, not under an SSH interpreter.
+Launch that app as the job's direct executable: wrapping it in a Python/uv worker
+can attribute its AppleScript children to the wrapper. `test-send --installed`
+uses Launch Services to start the app independently and reads its private receipt,
+so a caller's Automation approval cannot substitute for the app's approval.
 
 Approving Terminal during a direct CLI test does not prove the installed sender has
 permission. This send-only integration does not use Accessibility, Screen Recording,

@@ -11,6 +11,27 @@ from agent_storage_guard.cli import parser
 from agent_storage_guard.monitor_store import MonitorStore
 
 
+@pytest.fixture
+def launchservices_stub(tmp_path, monkeypatch):
+    """Real subprocess/file boundary; emulate open's lack of app exit status."""
+    from agent_storage_guard import delivery
+    opener = tmp_path / "open"
+    marker = tmp_path / "launched-through-services"
+    opener.write_text(f'''#!{sys.executable}
+import subprocess,sys
+from pathlib import Path
+args=sys.argv[1:]
+assert args[:3] == ['-n','-W','-g']
+Path({str(marker)!r}).write_text('launched')
+app=Path(args[args.index('-a')+1])
+with open(args[args.index('--stdout')+1],'w') as out, open(args[args.index('--stderr')+1],'w') as err:
+    subprocess.run([str(app/'Contents/MacOS/Agent Storage Guard'),*args[args.index('--args')+1:]],stdout=out,stderr=err)
+''')
+    opener.chmod(0o700)
+    monkeypatch.setattr(delivery, "_OPEN", str(opener), raising=False)
+    return marker
+
+
 @pytest.mark.skipif(sys.platform != "darwin" or not shutil.which("swiftc"), reason="macOS helper compiler")
 def test_installed_identity_test_send_reaches_controlled_native_boundary(tmp_path, monkeypatch, capsys):
     directory = tmp_path / "state/monitor"
@@ -31,6 +52,8 @@ print('accepted')
     boundary.chmod(0o700)
     cli = tmp_path / "synthetic-cli"
     cli.write_text(f'''#!{sys.executable}
+import os
+os.environ['ASG_SYNTHETIC_IMESSAGE']='{{"recipient":"synthetic@example.invalid"}}'
 from agent_storage_guard import imessage_delivery
 from agent_storage_guard.cli import main
 imessage_delivery._OSASCRIPT={str(boundary)!r}
@@ -53,7 +76,7 @@ raise SystemExit(main())
         assert not store.latest_capacity()
 
 
-def test_installed_sender_never_forwards_raw_helper_output(tmp_path):
+def test_installed_sender_never_forwards_raw_helper_output(tmp_path, launchservices_stub):
     import plistlib
     from agent_storage_guard import delivery
     app = tmp_path / "sender.app"
@@ -67,6 +90,7 @@ print(json.dumps({{"destination":"imessage","synthetic":True,"acceptance":"accep
     state = tmp_path / "state"
     (app / "Contents/Info.plist").write_bytes(plistlib.dumps({"ASGMonitorState": str(state)}))
     receipt, code = delivery.installed_test(app, "imessage", state)
+    assert launchservices_stub.exists()
     assert code == 0
     assert "PRIVATE_FIXTURE" not in json.dumps(receipt)
 
@@ -87,7 +111,7 @@ def test_installed_sender_rejects_helper_rebound_to_another_state_before_executi
 
 
 @pytest.mark.parametrize("error,expected", [("timeout", "timeout"), ("imessage_permission_denied", "imessage_permission_denied"), ("PRIVATE_FIXTURE", "delivery_failed")])
-def test_installed_failure_has_safe_error_and_action(tmp_path, error, expected):
+def test_installed_failure_has_safe_error_and_action(tmp_path, error, expected, launchservices_stub):
     import plistlib
     from agent_storage_guard import delivery
     app = tmp_path / "sender.app"
@@ -99,6 +123,7 @@ def test_installed_failure_has_safe_error_and_action(tmp_path, error, expected):
     state = tmp_path / "state"
     (app / "Contents/Info.plist").write_bytes(plistlib.dumps({"ASGMonitorState":str(state)}))
     receipt, status = delivery.installed_test(app, "imessage", state)
+    assert launchservices_stub.exists()
     assert status == 1
     assert receipt["code"] == expected
     assert "PRIVATE_FIXTURE" not in json.dumps(receipt)
