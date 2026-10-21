@@ -223,3 +223,33 @@ def test_permission_help_identifies_the_actual_reader_and_its_scope():
     assert "/monitor/Agent Storage Guard.app" in html and "Full Disk Access" in html
     assert "do not grant access to a shared Python" in html
 
+
+
+def test_refresh_guidance_uses_installed_reader_and_correct_state():
+    import os
+    import shlex
+    from agent_storage_guard import report_insights, workstation_report
+    from agent_storage_guard.storage_overview import render, _agent_prompt
+    payload = {"time": 1000, "platform": "darwin", "reader_path": "/Applications/Example Guard.app",
+               "report_path": "/synthetic/private state/monitor/report.html"}
+    view = report_insights.build(payload)
+    refresh = view["appendix"]["refresh"]
+    assert shlex.split(refresh["scan"]) == ["launchctl", "kickstart", f"gui/{os.getuid()}/local.agent-storage-guard.scan"]
+    assert shlex.split(refresh["capacity"]) == ["agent-storage-guard", "--state", "/synthetic/private state", "monitor", "tick"]
+    assert "configured alerts" in refresh["note"]
+    assert "permission app" in refresh["note"]
+    html = render(payload)
+    prompt = _agent_prompt(view, payload["report_path"])
+    assert "launchctl kickstart" in html and "/Applications/Example Guard.app" in html
+    assert refresh["scan"] in prompt and refresh["note"] in prompt
+    assert refresh["scan"] in workstation_report.render(payload)
+    assert "agent-storage-guard monitor scan" not in html
+
+
+def test_refresh_commands_quote_shell_metacharacters_and_keep_uninstalled_scan():
+    import shlex
+    from agent_storage_guard import report_insights
+    report = "/synthetic/state $(echo unsafe)/monitor/report.html"
+    view = report_insights.build({"report_path": report})
+    command = view["appendix"]["refresh"]["scan"]
+    assert shlex.split(command) == ["agent-storage-guard", "--state", "/synthetic/state $(echo unsafe)", "monitor", "scan"]

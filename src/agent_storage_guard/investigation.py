@@ -1,5 +1,7 @@
 """Audit scope and starting points, shared by the human overview and agent brief."""
 from pathlib import Path
+import os
+import shlex
 
 
 def plan(rows: list[dict], specs: list[dict]) -> dict:
@@ -23,6 +25,21 @@ def plan(rows: list[dict], specs: list[dict]) -> dict:
     ordered = sorted(branches, key=lambda r: (r["coverage"] != "complete", -r["bytes"], r["path"]))
     return {"audit_complete": False, "scope": "configured roots only", "roots": roots,
             "starting_points": ordered[:8], "additional_starting_points": max(0, len(ordered) - 8)}
+
+
+def refresh_commands(payload: dict) -> dict[str, str]:
+    cli = ["agent-storage-guard"]
+    if payload.get("report_path"):
+        cli += ["--state", str(Path(payload["report_path"]).parent.parent)]
+    reader = payload.get("reader_path") if payload.get("platform") == "darwin" else None
+    scan = (["launchctl", "kickstart", f"gui/{os.getuid()}/local.agent-storage-guard.scan"]
+            if reader else cli + ["monitor", "scan"])
+    note = ("Use the installed permission app through its scheduled job for protected folders; a direct shell may lack its access. "
+            "Requires an activated monitor. This request returns before the scan finishes; check measurement times afterward. "
+            "This scan can send configured alerts." if reader else
+            "Use the configured CLI in the account whose folders are being measured.")
+    return {"capacity": shlex.join(cli + ["monitor", "tick"]), "scan": shlex.join(scan),
+            "report": shlex.join(cli + ["monitor", "report", "--open"]), "note": note}
 
 
 PROCEDURE = (

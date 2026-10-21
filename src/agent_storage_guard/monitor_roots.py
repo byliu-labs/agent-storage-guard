@@ -77,4 +77,6 @@ def validate(raw: object) -> dict:
         value = config.get(name, 3600)
         if type(value) not in (int, float) or not math.isfinite(value) or not 0 < value <= 30 * 86400:
             raise ValueError(f"{name} must be positive and at most 30 days")
+    from .delivery import validate_config
+    validate_config(config)
     return config

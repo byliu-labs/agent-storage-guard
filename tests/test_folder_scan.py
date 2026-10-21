@@ -158,3 +158,42 @@ def test_slow_root_cannot_consume_the_whole_pass_before_fast_cache(tmp_path, mon
     groups = scan_roots([{"path": str(slow)}, {"path": str(fast)}], timeout=5, total_timeout=1)
     assert groups[str(fast)]["complete"] and groups[str(fast)]["bytes"] == 8192
     assert not groups[str(slow)]["complete"]
+
+
+def test_permission_and_deadline_are_both_retained_as_structured_causes(tmp_path):
+    from agent_storage_guard.scan_totals import ScanTotals
+    totals = ScanTotals(tmp_path,1,[],100)
+    totals.error(f"du: {tmp_path}/denied: Operation not permitted".encode())
+    group = totals.finish(None,"Folder scan exceeded deadline",1000)[str(tmp_path)]
+    assert group["error_kind"] == "permission_denied"
+    assert group["timed_out"] is True
+    assert group["complete"] is False
+
+
+def test_missing_root_has_structured_io_cause(tmp_path):
+    path = tmp_path / "missing"
+    group = scan_root({"path":str(path)})[str(path)]
+    assert group["error_kind"] == "io_error"
+    assert group["timed_out"] is False
+
+
+def test_retry_spends_spare_budget_to_finish_a_slow_root_instead_of_restarting_all(monkeypatch):
+    from types import SimpleNamespace
+    from agent_storage_guard import folder_scan
+    clock=[0.0]
+    visits=[]
+    monkeypatch.setattr(folder_scan,"time",SimpleNamespace(monotonic=lambda:clock[0],time=lambda:1000+clock[0]))
+    def measured(spec,timeout):
+        path=spec["path"]
+        duration=7 if "slow" in path else .1
+        complete=duration<=timeout
+        clock[0]+=min(duration,timeout)
+        visits.append((path,timeout))
+        return {path:{"complete":complete,"bytes":1024,"error":"" if complete else "deadline","observed_at":1000+clock[0]}}
+    monkeypatch.setattr(folder_scan,"scan_root",measured)
+    specs=[{"path":"/synthetic/"+name} for name in ("slow-a","slow-b","fast-a","fast-b")]
+    result=folder_scan.scan_roots(specs,timeout=10,total_timeout=20)
+    assert [path for path,_ in visits[:4]]==[spec["path"] for spec in specs]
+    assert result["/synthetic/slow-a"]["complete"]
+    assert not result["/synthetic/slow-b"]["complete"]
+    assert clock[0]<=20

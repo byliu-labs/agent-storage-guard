@@ -3,17 +3,65 @@
 # The app owns the Python child for its entire lifetime. Never accept a script,
 # executable or state path from launcher arguments after granting OS access.
 MONITOR_SOURCE = r'''
-func runMonitor() -> Never {
+import CoreServices
+
+// Ask macOS for access under this app's identity, without sending an event or
+// accepting a recipient, script or arbitrary application target.
+func messagesAccess() -> Never {
     let args = CommandLine.arguments
-    guard args.count == 3, ["tick", "scan"].contains(args[2]),
-          let cli = Bundle.main.object(forInfoDictionaryKey: "ASGMonitorCLI") as? String,
-          let state = Bundle.main.object(forInfoDictionaryKey: "ASGMonitorState") as? String else {
-        fputs("Expected --monitor tick|scan with an installed monitor configuration.\n", stderr)
+    guard args.count == 3, ["check", "request"].contains(args[2]) else {
+        fputs("Expected --messages-access check|request.\n", stderr)
         exit(64)
     }
+    let action = args[2]
+    DispatchQueue.global().async {
+        let identifiers = ["com.apple.MobileSMS", "com.apple.iChat"]
+        guard let identifier = identifiers.first(where: {
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil
+        }) else {
+            print("{\"action\":\"\(action)\",\"status\":\"unavailable\",\"os_status\":-600}")
+            exit(69)
+        }
+        let target = NSAppleEventDescriptor(bundleIdentifier: identifier)
+        let status = AEDeterminePermissionToAutomateTarget(
+            target.aeDesc, AEEventClass(typeWildCard), AEEventID(typeWildCard), action == "request")
+        let label: String
+        let code: Int32
+        switch status {
+        case noErr: label = "allowed"; code = 0
+        case OSStatus(errAEEventNotPermitted): label = "denied"; code = 77
+        case OSStatus(errAEEventWouldRequireUserConsent): label = "consent_required"; code = 77
+        case OSStatus(procNotFound): label = "not_running"; code = 69
+        default: label = "error"; code = 74
+        }
+        print("{\"action\":\"\(action)\",\"status\":\"\(label)\",\"os_status\":\(status)}")
+        exit(code)
+    }
+    dispatchMain()
+}
+if CommandLine.arguments.dropFirst().first == "--messages-access" { messagesAccess() }
+
+func runMonitor() -> Never {
+    let args = CommandLine.arguments
+    guard args.count >= 3,
+          let cli = Bundle.main.object(forInfoDictionaryKey: "ASGMonitorCLI") as? String,
+          let state = Bundle.main.object(forInfoDictionaryKey: "ASGMonitorState") as? String else {
+        fputs("Expected --monitor tick|scan or --test-send destination expected-state with an installed monitor configuration.\n", stderr)
+        exit(64)
+    }
+    let arguments: [String]
+    if args.count == 3 && args[1] == "--monitor" && ["tick", "scan"].contains(args[2]) {
+        arguments = ["--state", state, "monitor", args[2], "--notify"]
+    } else if args.count == 4 && args[1] == "--test-send" && args[2].range(of: "\\A[a-z][a-z0-9-]{0,39}\\z", options: .regularExpression) != nil {
+        guard args[3] == state else {
+            fputs("Installed monitor state does not match the requested state.\n", stderr)
+            exit(64)
+        }
+        arguments = ["--state", state, "monitor", "test-send", "--destination", args[2]]
+    } else { fputs("Invalid monitor action or destination.\n", stderr); exit(64) }
     let worker = Process()
     worker.executableURL = URL(fileURLWithPath: cli)
-    worker.arguments = ["--state", state, "monitor", args[2], "--notify"]
+    worker.arguments = arguments
     worker.terminationHandler = { process in
         exit(process.terminationReason == .exit ? process.terminationStatus : 128 + process.terminationStatus)
     }
@@ -30,7 +78,7 @@ func runMonitor() -> Never {
     catch { fputs("Monitor launch failed: \(error)\n", stderr); exit(74) }
     withExtendedLifetime(signals) { dispatchMain() }
 }
-if CommandLine.arguments.dropFirst().first == "--monitor" { runMonitor() }
+if let mode = CommandLine.arguments.dropFirst().first, ["--monitor", "--test-send"].contains(mode) { runMonitor() }
 '''
 
 # Original artwork, rendered locally with Apple's frameworks. No downloaded

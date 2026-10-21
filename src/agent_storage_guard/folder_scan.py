@@ -17,8 +17,9 @@ _DU = "/usr/bin/du"
 _MAX_GROUPS = 12000
 
 
-def _unknown(message: str, observed: float) -> dict:
-    return {"complete": False, "error": message, "observed_at": observed}
+def _unknown(message: str, observed: float, kind: str = "io_error") -> dict:
+    return {"complete": False, "error": message, "observed_at": observed,
+            "error_kind": kind, "timed_out": kind == "deadline"}
 
 
 def _prefixes(spec: dict) -> list[str]:
@@ -118,7 +119,8 @@ def scan_root(spec: dict, timeout: float = 900, now: float | None = None) -> dic
         groups = totals.finish(code, stopped, time.time() if now is None else now)
         return {str(logical_root / Path(key).relative_to(root)): value for key, value in groups.items()}
     except (OSError, MeasurementError, ValueError) as error:
-        return {str(Path(spec["path"]).expanduser().absolute()): _unknown(str(error), time.time() if now is None else now)}
+        return {str(Path(spec["path"]).expanduser().absolute()): _unknown(str(error), time.time() if now is None else now,
+            "permission_denied" if isinstance(error, PermissionError) else "io_error")}
 
 
 def _merge(groups: dict, measured: dict, root: str, configured: set[str]) -> None:
@@ -145,24 +147,26 @@ def scan_roots(specs: list[dict], timeout: float = 900, total_timeout: float = 1
     deadline = time.monotonic() + total_timeout
     ordered = [str(Path(spec["path"]).expanduser().absolute()) for spec in specs]
     configured = set(ordered)
-    groups = {root: _unknown("Waiting for this scan pass", time.time()) for root in ordered}
+    groups = {root: _unknown("Waiting for this scan pass", time.time(), "pending") for root in ordered}
     first_budget = min(timeout, total_timeout / max(1, len(specs)))
     retry = []
     for spec in specs:
         root = str(Path(spec["path"]).expanduser().absolute())
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            groups[root] = _unknown("Total folder scan deadline reached", time.time())
+            groups[root] = _unknown("Total folder scan deadline reached", time.time(), "deadline")
             continue
         measured = scan_root(spec, min(first_budget, remaining))
         _merge(groups, measured, root, configured)
         if "deadline" in measured[root].get("error", "").lower():
             retry.append(spec)
-    for index, spec in enumerate(retry):
+    for spec in retry:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
         root = str(Path(spec["path"]).expanduser().absolute())
-        measured = scan_root(spec, min(timeout, remaining / (len(retry) - index)))
+        # Every root already got a first turn. Finish one slow root with the
+        # spare budget instead of repeatedly giving all of them too little.
+        measured = scan_root(spec, min(timeout, remaining))
         _merge(groups, measured, root, configured)
     return groups

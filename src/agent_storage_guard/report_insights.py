@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .investigation import plan
+from .investigation import plan, refresh_commands
 
 GIB = 1024 ** 3
 _WINDOWS = (("Past hours", 3600), ("Past day", 86400), ("Past week", 7 * 86400))
@@ -329,8 +329,9 @@ def build(payload: dict) -> dict:
             "actions": _actions(status, growers, gaps, older),
             "appendix": {"folders": rows, "coverage_gaps": gaps, "worktrees": payload.get("worktrees", {}),
                 "reader_path": payload.get("reader_path"), "platform": payload.get("platform"),
+                "refresh": refresh_commands(payload),
                 "caveats": ["Location categories use disjoint configured root totals. For partial roots, only nonoverlapping currently measured subfolders contribute to known bytes; the remainder stays unknown.",
-                            "To refresh manually: agent-storage-guard monitor tick; agent-storage-guard monitor scan; agent-storage-guard monitor report --open.",
+                            refresh_commands(payload)["note"],
                             "Coverage gaps and absent history are unknown, never zero. Older complete values are explicitly labeled.",
                             "Folder sizes are allocated-block observations. APFS shared blocks and hardlinks mean they are not guaranteed reclaimable space.",
                             "Disk capacity, memory, and folder evidence can have different measurement times; no process or folder is blamed without evidence.",

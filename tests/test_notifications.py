@@ -55,9 +55,28 @@ else:
     assert manifest["CFBundleIdentifier"].endswith(".tests")
     assert manifest["ASGReportPath"] == str(tmp_path / "report.html")
     assert manifest["ASGMonitorCLI"] == str(cli)
+    assert manifest["NSAppleEventsUsageDescription"]
+    assert len(manifest["ASGBuildDigest"]) == 64
     icon = app / "Contents/Resources" / manifest["CFBundleIconFile"]
     assert icon.read_bytes().startswith(b"icns")
     executable = app / "Contents/MacOS/Agent Storage Guard"
+    # A permission check never sends a message or prompts. It runs inside the
+    # signed, separately named test helper rather than Python/osascript.
+    result = subprocess.run([str(executable), "--messages-access", "check"], capture_output=True, text=True, timeout=20)
+    assert result.returncode in {0, 69, 77, 74}, result.stderr
+    access = json.loads(result.stdout)
+    assert access["action"] == "check"
+    assert access["status"] in {"allowed", "denied", "consent_required", "not_running", "unavailable", "error"}
+    assert isinstance(access["os_status"], int)
+    for args in (["--messages-access"], ["--messages-access", "other"],
+                 ["--messages-access", "request", "arbitrary-target"]):
+        result = subprocess.run([str(executable), *args], capture_output=True, text=True, timeout=10)
+        assert result.returncode == 64
+        assert not result.stdout
+    inode = executable.stat().st_ino
+    assert notifications.prepare_app(tmp_path / "sender", tmp_path / "report.html", cli, tmp_path / "state") == app
+    assert executable.stat().st_ino == inode
+    assert not list(app.parent.glob("*.previous-*"))
     result = subprocess.run([str(executable), "--self-test"], capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr
     assert notifications.BUNDLE_ID in result.stdout
@@ -70,6 +89,16 @@ else:
     result = subprocess.run([str(executable), "--monitor", "tick"], capture_output=True, text=True, timeout=15)
     assert result.returncode == 7, result.stderr
     assert json.loads(result.stdout) == ["--state", str(tmp_path / "state"), "monitor", "tick", "--notify"]
+    result = subprocess.run([str(executable), "--test-send", "messages-test", str(tmp_path / "state")], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 7, result.stderr
+    assert json.loads(result.stdout) == ["--state", str(tmp_path / "state"), "monitor", "test-send", "--destination", "messages-test"]
+    for destination in ("UPPER", "../other", "", "a" * 41, "test\n", "test\r", "test\u2028"):
+        result = subprocess.run([str(executable), "--test-send", destination, str(tmp_path / "state")], capture_output=True, text=True, timeout=10)
+        assert result.returncode == 64
+    for extra in ([], [str(tmp_path / "wrong-state")]):
+        result = subprocess.run([str(executable), "--test-send", "messages-test", *extra], capture_output=True, text=True, timeout=10)
+        assert result.returncode == 64
+        assert not result.stdout
     for args in (["--monitor", "run"], ["--monitor", "tick", "--anything"]):
         result = subprocess.run([str(executable), *args], capture_output=True, text=True, timeout=10)
         assert result.returncode == 64
@@ -101,6 +130,41 @@ else:
                 os.kill(int(scanner_pid.read_text()), signal.SIGKILL)
             except ProcessLookupError:
                 pass
+
+
+    changed = notifications.prepare_app(tmp_path / "sender", tmp_path / "other-report.html", cli, tmp_path / "state")
+    changed_manifest = plistlib.loads((changed / "Contents/Info.plist").read_bytes())
+    assert changed_manifest["ASGBuildDigest"] != manifest["ASGBuildDigest"]
+    assert len(list(app.parent.glob("*.previous-*"))) == 1
+
+
+@pytest.mark.parametrize("change", ["none", "manifest", "signature", "symlink", "missing", "not-executable"])
+def test_reuse_requires_matching_owned_bundle_and_verified_signature(tmp_path, monkeypatch, change):
+    app = tmp_path / "Example.app"
+    binary = app / "Contents/MacOS/Agent Storage Guard"
+    binary.parent.mkdir(parents=True)
+    binary.write_text("synthetic executable")
+    binary.chmod(0o700)
+    manifest = {"ASGBuildDigest": "synthetic", "ASGReportPath": "synthetic-report"}
+    (app / "Contents/Info.plist").write_bytes(plistlib.dumps(manifest))
+    if change == "manifest":
+        manifest = {**manifest, "ASGReportPath": "changed-report"}
+    elif change == "symlink":
+        binary.rename(binary.with_suffix(".original"))
+        binary.symlink_to(binary.with_suffix(".original"))
+    elif change == "missing":
+        binary.rename(binary.with_suffix(".original"))
+    elif change == "not-executable":
+        binary.chmod(0o600)
+    calls = []
+    def verify(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, int(change == "signature"))
+    monkeypatch.setattr(notifications.subprocess, "run", verify)
+    assert notifications._reusable_app(app, manifest) is (change == "none")
+    assert bool(calls) is (change in {"none", "signature"})
+    if calls:
+        assert calls == [["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)]]
 
 
 def test_linux_without_sender_fails_visibly(monkeypatch):
