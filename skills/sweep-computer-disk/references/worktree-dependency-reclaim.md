@@ -8,8 +8,9 @@ Before proposing a large number, inspect the repository's worktree creation scri
 
 - Group worktrees by repository and lockfile digest (`uv.lock`, `package-lock.json`, `pnpm-lock.yaml`, or equivalent). Report the number of materialized environments versus distinct dependency graphs.
 - Check for APFS clonefile commands such as `cp -c` or `cp -Rc`. Check whether Python environments are materialized from uv's cache or Node packages from a content-addressed store.
+- Resolve environment symlinks and documented shared-environment references before selecting donors for cleanup. Keep any donor used by a retained checkout; follow the [shared-consumer checks](missed-locations-and-safety.md#shared-git-storage-and-environment-consumers). Matching lockfiles alone do not make installed environments interchangeable.
 - Treat `du` as logical/accounting size. Clonefile and hardlink-backed trees can share physical storage even when each path reports its full size. Do not promise that deleting N GiB of logical trees will increase free space by N GiB.
-- Capture `df -k /System/Volumes/Data` and `diskutil info /System/Volumes/Data` before staging. A move into Trash stays on the same volume and normally reclaims no space. If the user later empties the exact Trash bundle, capture the measurements again afterward. Label that change as observed volume free-space delta; concurrent writes, snapshots, and delayed APFS accounting prevent exact attribution.
+- Resolve the writable data volume's mount point on the current host and capture `df -k "$data_volume"` and `diskutil info "$data_volume"` before staging. A move into Trash stays on the same volume and normally reclaims no space. If the user later empties the exact Trash bundle, capture the measurements again afterward. Label that change as observed volume free-space delta; concurrent writes, snapshots, and delayed APFS accounting prevent exact attribution.
 
 ## 2. Build the exact candidate table
 

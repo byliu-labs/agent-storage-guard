@@ -52,6 +52,8 @@ scheduled monitoring is active.
 
 To install the skill manually, copy the **whole** [`skills/sweep-computer-disk`](skills/sweep-computer-disk) folder into your agent's skills directory. Keep any previous version before replacing it. Invoke it with `$sweep-computer-disk` in Codex, `/sweep-computer-disk` in Claude Code, or your agent's equivalent.
 
+For developer/CI storage or fast regrowth, the skill includes [discovery and safety checks](skills/sweep-computer-disk/references/missed-locations-and-safety.md) for transferred test copies, repeated environments, shared Git storage, retained evidence and storage-monitor history. Examples use relative paths; machine inventories and cleanup approvals stay private.
+
 ## Start monitoring
 
 After choosing the folders you want measured:

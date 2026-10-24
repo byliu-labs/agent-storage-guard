@@ -16,8 +16,8 @@ Run bundled helper paths relative to this skill directory. Discovery needs Pytho
 ## Safety boundary
 
 - Audit first. Do not delete, prune, uninstall, stop processes, empty Trash, or alter Git worktrees before presenting an itemized proposal and receiving approval.
-- Inspect metadata only: paths, sizes, dates, Git state, application versions, and native dry-run output. Do not read file contents or expose credentials.
-- Treat private application data (including `~/Library/Application Support/`), credential stores, and user-designated production paths as protected. Inspect them only with explicit permission.
+- Inspect paths, sizes, dates, Git state, application versions, and native dry-run output. Keep user data and secret-bearing configuration metadata-only; never expose credentials. Read relevant cleanup/CI tooling only to establish artifact creation or retention behavior.
+- Treat private application data (including home-relative `Library/Application Support/`), credential stores, and user-designated production paths as protected. Inspect them only with explicit permission.
 - Treat `Operation not permitted` and `Permission denied` as coverage gaps, not zero usage.
 - If approved, keep the exact approved scope. Prefer timestamped Trash staging with a manifest and restore script for ordinary files. Use native narrow cleanup commands for package managers and containers; never substitute a broad prune.
 
@@ -25,7 +25,7 @@ Run bundled helper paths relative to this skill directory. Discovery needs Pytho
 
 1. Record `df -h`, `vm_stat`, `sysctl vm.swapusage`, APFS volume usage, and local snapshot names.
 2. Apply the user's thresholds. If none are provided, focus on files over 50 MB and directories over 200 MB.
-3. Complete the automatic discovery and coverage procedure below before selecting cleanup targets. Start with bounded top-level measurements of the writable data volume, home directory, `/Applications`, `/opt`, and `/private`. Drill into only threshold-crossing directories. Avoid parallel full-tree scans; they can exhaust file descriptors. Continue authorized scans even when they run longer than five minutes; report progress and any genuine resource or access limits. Ask before heavy local/cloud transfers or spending money, not solely because time has elapsed.
+3. Complete the automatic discovery and coverage procedure below before selecting cleanup targets. Start with bounded top-level measurements of the writable data volume, home directory, and boot-volume-relative `Applications/`, `opt/`, and `private/`. Resolve their actual mount locations on the current host. Drill into only threshold-crossing directories. Avoid parallel full-tree scans; they can exhaust file descriptors. Continue authorized scans even when they run longer than five minutes; report progress and any genuine resource or access limits. Ask before heavy local/cloud transfers or spending money, not solely because time has elapsed.
 4. Inspect common high-value areas separately: Downloads, Desktop archives, temporary directories, developer caches, model caches, package caches, application update staging, Docker, Xcode simulators, and project worktrees.
 5. For individual large files, report size, modification date, and path. For folders, report their measured size and largest children when useful.
 6. Classify each candidate:
@@ -33,6 +33,7 @@ Run bundled helper paths relative to this skill directory. Discovery needs Pytho
    - Regenerable but costly: dependency, browser, build, or model cache. State likely regrowth and redownload cost; normally keep recent model and package caches.
    - User data or unknown: archives, recordings, databases, Docker volumes, app profiles, messages, and protected paths. Keep unless ownership and redundancy are proven.
 7. For worktrees, prefer dependency trimming over whole-worktree cleanup:
+   - Before moving a clone, worktree, or environment, check its retained consumers as described in [references/missed-locations-and-safety.md](references/missed-locations-and-safety.md#shared-git-storage-and-environment-consumers). A finished checkout may own Git administration or dependencies still needed elsewhere.
    - Measure ignored `.venv` and `node_modules` directories separately and propose them first as rebuildable candidates. State their combined logical size and reinstall cost. On APFS, first inspect how they were created: `cp -c`/`cp -Rc`, uv's cache linking, pnpm's content-addressed store, and other clone/hardlink mechanisms can make `du` double-count shared physical extents. Never present summed `du` output as guaranteed reclaim. Moving files to Trash does not free space. Record volume free space before staging and, only if the user later empties the exact Trash bundle, again afterward; report that observed delta separately from logical bytes staged.
    - Do not generalize this rule to every ignored directory. Build outputs, registries, datasets, and other ignored paths may contain valuable local state; classify them separately and keep them unless proven reproducible.
    - Dependency trimming does not remove the worktree and therefore does not require the whole-worktree 14-day age gate. It still requires a clean worktree, no live process whose CWD is inside it, fresh exact merge proof, no open PR contradiction, exact-path approval, and a final preflight. Keep dependencies for dirty, active, open-PR, closed-unmerged, or merge-uncertain worktrees.
@@ -48,6 +49,11 @@ Run bundled helper paths relative to this skill directory. Discovery needs Pytho
 Discovery is the agent's responsibility. Do not ask the user to enumerate folders,
 restrict the audit to paths they happen to mention, or treat an initial shortlist
 as complete. User-named paths are additional checks, not the discovery strategy.
+
+For developer/CI storage or rapid unexplained regrowth, read
+[references/missed-locations-and-safety.md](references/missed-locations-and-safety.md).
+It covers overlooked test copies, data-type attribution, monitor history, passive
+Finder handles, shared consumers, and cleanup during concurrent work.
 
 - Enumerate home-directory children, including hidden directories, and classify
   each as measured, protected, inaccessible, live application/tool state, or queued
@@ -150,5 +156,6 @@ Lead with disk capacity and RAM/swap pressure. Then provide:
 - Needs-decision list for user archives, recordings, unused applications, and unidentified databases/volumes.
 - Coverage gaps caused by macOS privacy controls or stopped long-running scans.
 - A total conservative reclaim estimate that does not double-count nested paths.
+- For rapid growth, a breakdown by data type and timestamped monitor deltas with actual comparison intervals; distinguish new writes/regrowth from net change after cleanup.
 
 End by asking the user to approve specific candidate groups. Do not treat that question as authorization to remove anything not explicitly listed.
